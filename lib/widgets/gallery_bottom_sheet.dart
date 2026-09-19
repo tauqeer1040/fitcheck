@@ -1,11 +1,14 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
+import '../services/sticker_style_service.dart';
 
 /// Persistent frosted-glass bottom sheet, resizable by dragging the handle:
 /// collapsed = single row of the most recent photos (no scrolling needed),
@@ -35,6 +38,11 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
   bool _hasPermission = false;
   bool _askedOnce = false;
   bool _dragging = false;
+
+  /// True once first frame has painted. The glass (backdrop filter) is
+  /// gated on this so startup never blocks on the expensive blur — the
+  /// same trick the meowstian journal sheet uses.
+  bool _blurReady = false;
   double _height = _collapsedHeight;
   List<AssetEntity> _recent = [];
   final _focusNode = FocusNode();
@@ -57,6 +65,10 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
     super.initState();
     _focusNode.addListener(_onFocusChange);
     _load();
+    // Flip to the real glass one frame after first paint.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _blurReady = true);
+    });
   }
 
   @override
@@ -74,6 +86,47 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
   }
 
   Future<void> _load() async {
+    // Play User Data policy: prominent disclosure + explicit user
+    // consent BEFORE the first system photo-permission prompt. Photos
+    // stay on-device (cutout runs locally); access only reads images
+    // the user picks for stickers.
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('photo_disclosure_accepted') ?? false)) {
+      if (!mounted) return;
+      final accepted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF2C2C2E),
+          title: const Text('Your photos stay yours'),
+          content: const Text(
+            'StickerPants reads the photos you pick so it can cut '
+            'outfit stickers from them — right on your device. '
+            'Your photos are never uploaded, shared, or used for ads.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not now'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true) {
+        if (mounted) {
+          setState(() {
+            _checked = true;
+            _hasPermission = false;
+          });
+        }
+        return;
+      }
+      await prefs.setBool('photo_disclosure_accepted', true);
+    }
     final permission = await PhotoManager.requestPermissionExtend();
     final granted = permission.hasAccess;
 
@@ -107,9 +160,9 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
     }
   }
 
-  /// First tap triggers the OS permission popup. If access is still denied
-  /// after a request attempt (OS can no longer show the popup), fall back
-  /// to an explanatory dialog that offers the app settings page.
+  /// First tap triggers the OS permission popup. Permission explanation
+  /// dialog + settings fallback when access is still denied afterwards
+  /// (OS can no longer show the popup): covers rationale-on-denial.
   Future<void> _requestAccess() async {
     final permission = await PhotoManager.requestPermissionExtend();
     if (!permission.hasAccess && _askedOnce) {
@@ -120,7 +173,7 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
           backgroundColor: const Color(0xFF2C2C2E),
           title: const Text('Photo access needed'),
           content: const Text(
-            'FitCheck needs access to your photos to create outfit '
+            'StickerPants needs access to your photos to create outfit '
             'stickers. Enable it in Settings to continue.',
           ),
           actions: [
@@ -180,14 +233,18 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
     }
   }
 
-  Widget _thumb(AssetEntity asset) {
+  /// Photo thumbnail clipped to the photo's stable random shape — the
+  /// same shape the sticker gets when this photo is picked.
+  Widget _thumb(AssetEntity asset, int index, {required double size}) {
     return GestureDetector(
       onTap: () {
         AppHaptics.tap();
         widget.onPick(asset);
       },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+      child: M3Container(
+        kStyleShapes[randomShapeIndexForAsset(asset.id)],
+        width: size,
+        height: size,
         child: AssetEntityImage(
           asset,
           isOriginal: false,
@@ -242,15 +299,25 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
               ),
             ),
             Expanded(
-              child: GridView.builder(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  crossAxisSpacing: 6,
-                  mainAxisSpacing: 6,
-                ),
-                itemCount: _recent.length,
-                itemBuilder: (context, index) => _thumb(_recent[index]),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Cell size must match the grid delegate below:
+                  // 8px padding per side, 3 gaps of 6px, 4 columns.
+                  final tileSize =
+                      (constraints.maxWidth - 16 - 6 * 3) / 4;
+                  return GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      crossAxisSpacing: 6,
+                      mainAxisSpacing: 6,
+                    ),
+                    itemCount: _recent.length,
+                    itemBuilder: (context, index) =>
+                        _thumb(_recent[index], index, size: tileSize),
+                  );
+                },
               ),
             ),
           ],
@@ -282,7 +349,7 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
                   SizedBox(
                     width: itemSize,
                     height: itemSize,
-                    child: _thumb(_recent[i]),
+                    child: _thumb(_recent[i], i, size: itemSize),
                   ),
                 ],
               ],
@@ -297,49 +364,23 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
   Widget build(BuildContext context) {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
-    // Frosted glass sheet with curved top corners. TapRegion collapses
-    // (dismisses) the sheet when the user taps anywhere outside it, and
-    // the Focus listener collapses it on focus loss.
-    return TapRegion(
-      onTapOutside: (_) {
-        if (_isExpanded) collapse();
-      },
-      child: Focus(
-        focusNode: _focusNode,
-        onFocusChange: (hasFocus) {
-          if (!hasFocus && _isExpanded) collapse();
-        },
-        child: ClipRRect(
-          borderRadius:
-              const BorderRadius.vertical(top: Radius.circular(30)),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 56, sigmaY: 56),
-            child: AnimatedContainer(
-              duration:
-                  _dragging ? Duration.zero : const Duration(milliseconds: 140),
-              curve: AppMotion.appleEase,
-              height: _checked && _hasPermission && _recent.isNotEmpty
-                  ? _height + bottomPadding
-                  : _collapsedHeight + bottomPadding,
-              decoration: BoxDecoration(
-                // Frosted glass x2: heavy blur, bright cut edge, deep lift.
-                color: const Color(0xFF3A3A3C).withValues(alpha: 0.5),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(30),
-                ),
-                border: Border(
-                  top: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.4)),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    blurRadius: 48,
-                    offset: const Offset(0, -12),
-                  ),
-                ],
-              ),
-              child: Column(
+    // Frosted glass sheet (meowstian method): the blur does the work —
+    // sigma 16 plus only a whisper of tint (8% black) and a top hairline.
+    // TapRegion/Focus below dismiss on tap-away/focus loss.
+    final sheetContent = AnimatedContainer(
+      duration:
+          _dragging ? Duration.zero : const Duration(milliseconds: 140),
+      curve: AppMotion.appleEase,
+      height: _checked && _hasPermission && _recent.isNotEmpty
+          ? _height + bottomPadding
+          : _collapsedHeight + bottomPadding,
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.08),
+        border: Border(
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+      ),
+      child: Column(
                 children: [
                   // Drag handle to resize: up = expand to grid, down = collapse.
                   GestureDetector(
@@ -370,9 +411,44 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
                   Expanded(child: _buildContent()),
                 ],
               ),
+    );
+
+    // meowstian frost: solid card for the first frame, then ClipRRect >
+    // ClipRect > BackdropFilter(blur 16). ClipRect keeps the filter from
+    // bleeding outside the clip bounds.
+    final Widget sheet = !_blurReady
+        ? Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C1E),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(30)),
+              border: Border(
+                top: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+              ),
             ),
-          ),
-        ),
+            child: sheetContent,
+          )
+        : ClipRRect(
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(30)),
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: sheetContent,
+              ),
+            ),
+          );
+
+    return TapRegion(
+      onTapOutside: (_) {
+        if (_isExpanded) collapse();
+      },
+      child: Focus(
+        focusNode: _focusNode,
+        onFocusChange: (hasFocus) {
+          if (!hasFocus && _isExpanded) collapse();
+        },
+        child: sheet,
       ),
     );
   }

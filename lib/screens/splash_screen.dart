@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/analytics_service.dart';
+import '../services/revenuecat_service.dart';
 import 'gallery_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -58,9 +61,23 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _init() async {
     final timer = Future<void>.delayed(const Duration(milliseconds: 800));
 
+    // Bootstrap: analytics logs the launch. RevenueCat loads
+    // passively on first actual use (gate/paywall/purchase) via
+    // ensureInitialized — never warmed up here, never blocks launch.
+    RevenueCatService.stampInstall();
+    AnalyticsService.instance.logAppOpen();
+
+    // First-run gate: onboarding owns the first session; returning
+    // users go straight home.
+    //
+    // Onboarding SKIPPED for now: home loads directly on every launch.
+    // (OnboardingFlow still writes `onboarding_completed_v1` when run.)
+    await SharedPreferences.getInstance();
+
     if (!mounted) return;
     setState(() {
       _targetScreen = GalleryScreen(onReady: _onTargetReady);
+      _isTargetReady = false;
     });
 
     await timer;

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "google-play-console": {
+      "type": "local",
+      "command": ["C:\\Users\\tau\\AppData\\Roaming\\Python\\Python312\\Scripts\\google-play-console-mcp.exe", "--credentials", "C:\\Users\\tau\\code\\fitcheck\\android\\fbm\\play-developer-api.json"],
+      "enabled": true,
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "C:\\Users\\tau\\code\\fitcheck\\android\\fbm\\play-developer-api.json",
+        "GOOGLE_PLAY_STORE_CREDENTIALS": "C:\\Users\\tau\\code\\fitcheck\\android\\fbm\\play-developer-api.json"
+      }
+    }
+  }
+}

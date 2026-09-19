@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -66,7 +67,11 @@ class SubjectCutoutService {
         'and call SubjectCutoutService.registerBackend().',
       ));
 
-  Future<String> cutoutAndSave(String imagePath) async {
+  /// Cutout result: the saved PNG path plus where the subject sat inside
+  /// the ORIGINAL photo, as a 0–1 anchor (0,0 = top-left, 1,1 = bottom-
+  /// right of the mask bbox center, +3% pad included). Lets the UI float
+  /// the cutout at its true origin instead of always centering it.
+  Future<CutoutResult> cutoutAndSave(String imagePath) async {
     final sw = Stopwatch()..start();
     final srcBytes = await File(imagePath).readAsBytes();
 
@@ -184,7 +189,14 @@ class SubjectCutoutService {
         'seg=${tSeg - tDecode}ms clean=${tClean - tSeg}ms '
         'merge=${tComp - tClean}ms export=${tTotal - tComp}ms '
         'total=${tTotal}ms');
-    return file.path;
+    // Subject anchor in the SOURCE photo: mask-bbox center (incl. pad),
+    // normalized 0–1. (ax, ay) maps straight onto any BoxFit.cover rect.
+    final ax = ((bb[0] + bb[2] + 1) / 2) / mask.width;
+    final ay = ((bb[1] + bb[3] + 1) / 2) / mask.height;
+    return CutoutResult(
+      path: file.path,
+      anchor: Offset(ax.clamp(0.0, 1.0), ay.clamp(0.0, 1.0)),
+    );
   }
 
   // ---------------------------------------------------------------- image IO
@@ -624,6 +636,18 @@ class SubjectCutoutService {
       img.dispose();
     }
   }
+}
+
+/// Saved cutout plus where its subject lived inside the source photo.
+class CutoutResult {
+  final String path;
+
+  /// Subject-bbox center in the original photo, normalized 0–1. The
+  /// caller scales this onto their display rect of the photo to get the
+  /// on-screen float origin.
+  final Offset anchor;
+
+  const CutoutResult({required this.path, required this.anchor});
 }
 
 /// One GPU render: PNG bytes for the backend file and/or raw RGBA for

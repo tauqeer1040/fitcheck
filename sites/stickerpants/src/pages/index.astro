@@ -1,0 +1,192 @@
+---
+import Base from '../layouts/Base.astro';
+
+const playUrl = 'https://play.google.com/store/apps/details?id=com.taucity.stickerpants';
+
+const features = [
+  {
+    title: 'On-device AI cutout',
+    subtitle: 'Your photo is cut out right on your phone. Nothing is ever uploaded.',
+  },
+  {
+    title: 'WhatsApp sticker packs',
+    subtitle: 'Push your fits straight into WhatsApp as real stickers.',
+  },
+  {
+    title: 'Homescreen widgets',
+    subtitle: 'Your latest fits, living on your home screen.',
+  },
+  {
+    title: 'No account, no fuss',
+    subtitle: 'Install and make your first sticker in about 30 seconds.',
+  },
+];
+---
+
+<Base title="StickerPants — your outfit, now a sticker | WhatsApp sticker maker" description="StickerPants turns your outfit photos into WhatsApp stickers. On-device AI cutout, sticker packs, and homescreen widgets — no account needed.">
+  <style>
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-up {
+      animation: fadeUp 0.6s ease-out forwards;
+      opacity: 0;
+    }
+    .delay-100 { animation-delay: 0.1s; }
+    .delay-200 { animation-delay: 0.2s; }
+    .delay-300 { animation-delay: 0.3s; }
+    .delay-400 { animation-delay: 0.4s; }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    .animate-float {
+      animation: float 4s ease-in-out infinite;
+    }
+    .hero-headline {
+      font-size: clamp(2.75rem, 5.5vw, 5rem);
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      font-weight: 800;
+    }
+    .section-headline {
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 1.15;
+      letter-spacing: -0.015em;
+      font-weight: 800;
+    }
+  </style>
+
+  <!-- Hero -->
+  <section class="pt-8 sm:pt-14 pb-16 sm:pb-24 px-6 lg:px-8">
+    <div class="max-w-6xl mx-auto">
+      <div class="flex flex-col-reverse lg:flex-row items-center gap-12 lg:gap-20">
+        <div class="flex-shrink-0 text-center lg:text-left flex flex-col items-center lg:items-start w-full lg:max-w-[580px]">
+          <h1 class="hero-headline text-gray-900 mb-6 animate-fade-up delay-100">
+            Your outfit.<br />Now a sticker.
+          </h1>
+          <div class="flex items-start gap-3 mb-6 animate-fade-up delay-300" style="max-width: 480px;">
+            <img src="/images/logo.png" alt="" class="h-10 w-auto mt-0.5 flex-shrink-0 rounded-lg" />
+            <p class="text-lg text-gray-600 leading-relaxed text-left">
+              Cut yourself out of any photo. Flick. Stick. That&rsquo;s the whole app &mdash; your fits as real WhatsApp stickers in about 30 seconds.
+            </p>
+          </div>
+          <div class="flex flex-col items-center lg:items-start animate-fade-up delay-400">
+            <div class="flex flex-col sm:flex-row gap-3 mb-3 w-full sm:w-auto">
+              <a href={playUrl} target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 bg-[#1c1c1e] text-white px-8 py-4 rounded-2xl hover:bg-black transition-all duration-200 shadow-lg font-semibold text-lg">
+                Get it on Google Play
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+              </a>
+            </div>
+            <p class="text-xs text-gray-400 mt-1 animate-fade-up delay-400">
+              Free to use · No account required
+            </p>
+          </div>
+        </div>
+        <div class="flex-shrink-0 animate-float">
+          <div class="relative mx-auto" style="width: 300px;">
+            <div class="absolute -inset-12 rounded-[3rem] bg-gradient-to-br from-[#ffd60a]/30 to-[#ffd60a]/5 blur-3xl"></div>
+            <div class="relative rounded-[2.5rem] border-[10px] border-gray-900 bg-gray-900 shadow-2xl overflow-hidden" style="max-width: 300px;">
+              <img src="/images/hero.png" alt="StickerPants app" class="w-full h-auto block" loading="eager" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how" class="py-20 sm:py-28 px-6 lg:px-8" style="background-color: #faf7f2;">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="section-headline text-gray-900 mb-16">How it works</h2>
+      <div class="space-y-12 w-full">
+        <div class="relative pb-12 w-full">
+          <span class="absolute top-0 right-0 text-5xl sm:text-6xl font-bold text-gray-200">01</span>
+          <h3 class="text-2xl sm:text-3xl font-semibold mb-3 text-gray-900 relative z-10 pr-20 lg:pr-24">Pick any photo</h3>
+          <p class="text-gray-500 text-lg relative z-10 pr-20 lg:pr-24">Your fit, your pet, your menace of a friend. Anything in your gallery.</p>
+          <div class="absolute left-0 right-0 bottom-0 border-b border-gray-200"></div>
+        </div>
+        <div class="relative pb-12 w-full">
+          <span class="absolute top-0 right-0 text-5xl sm:text-6xl font-bold text-gray-200">02</span>
+          <h3 class="text-2xl sm:text-3xl font-semibold mb-3 text-gray-900 relative z-10 pr-20 lg:pr-24">We cut you out</h3>
+          <p class="text-gray-500 text-lg relative z-10 pr-20 lg:pr-24">On-device AI. Magically. No cropping lessons, no uploads.</p>
+          <div class="absolute left-0 right-0 bottom-0 border-b border-gray-200"></div>
+        </div>
+        <div class="relative w-full">
+          <span class="absolute top-0 right-0 text-5xl sm:text-6xl font-bold text-gray-200">03</span>
+          <h3 class="text-2xl sm:text-3xl font-semibold mb-3 text-gray-900 relative z-10 pr-20 lg:pr-24">You&rsquo;re in the chat</h3>
+          <p class="text-gray-500 text-lg relative z-10 pr-20 lg:pr-24">A real WhatsApp sticker, sent as stickers. Plus widgets for your home screen.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="py-20 sm:py-28 px-6 lg:px-8">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="section-headline text-center mb-4">Simple, but powerful</h2>
+      <p class="text-lg sm:text-xl text-gray-500 text-center mb-14 max-w-3xl mx-auto">
+        Everything you need to turn fits into stickers, without the complexity.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-12">
+        {features.map((f) => (
+          <div class="flex flex-col items-center rounded-3xl border border-gray-200 bg-white p-8 shadow-sm">
+            <h3 class="text-xl font-semibold text-center mt-1">{f.title}</h3>
+            <p class="text-gray-500 text-center mt-2">{f.subtitle}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="py-20 sm:py-28 px-6 lg:px-8">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="section-headline text-gray-900 mb-10 text-center">Questions people ask</h2>
+      <div class="space-y-8">
+        <div>
+          <h3 class="text-xl font-semibold text-gray-900 mb-2">Is StickerPants free?</h3>
+          <p class="text-gray-600 leading-relaxed">Yes — making stickers is free. StickerPants Pro unlocks unlimited everything for power users, billed through Google Play.</p>
+        </div>
+        <div>
+          <h3 class="text-xl font-semibold text-gray-900 mb-2">Are my photos uploaded anywhere?</h3>
+          <p class="text-gray-600 leading-relaxed">No. The cutout runs entirely on your device with on-device machine learning. Your photos never leave your phone for sticker creation.</p>
+        </div>
+        <div>
+          <h3 class="text-xl font-semibold text-gray-900 mb-2">Do I need an account?</h3>
+          <p class="text-gray-600 leading-relaxed">No account, no sign-in. Install the app and make your first sticker in about 30 seconds.</p>
+        </div>
+        <div>
+          <h3 class="text-xl font-semibold text-gray-900 mb-2">How do stickers get into WhatsApp?</h3>
+          <p class="text-gray-600 leading-relaxed">StickerPants uses WhatsApp&rsquo;s official third-party sticker API — tap once and your pack appears in WhatsApp, ready to send.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Final CTA -->
+  <section class="py-20 sm:py-28 px-6 lg:px-8" style="background-color: #faf7f2;">
+    <div class="max-w-2xl mx-auto text-center">
+      <h2 class="section-headline text-gray-900 mb-6">Your fit deserves the chat</h2>
+      <p class="text-gray-500 text-lg mb-10" style="max-width: 480px; margin-left: auto; margin-right: auto;">
+        Pick a photo. Get a sticker. Send it everywhere.
+      </p>
+      <a href={playUrl} target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-[#1c1c1e] text-white px-8 py-4 rounded-2xl hover:bg-black transition-all duration-200 shadow-lg font-semibold text-lg">
+        Get it on Google Play
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+      </a>
+      <p class="text-sm text-gray-400 mt-6">
+        <a href="/privacy" class="underline hover:text-gray-900">Privacy Policy</a> · <a href="/terms" class="underline hover:text-gray-900">Terms of Service</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- Developer Info -->
+  <section class="py-10 px-6 lg:px-8 border-t border-gray-200">
+    <div class="max-w-3xl mx-auto text-center text-sm text-gray-400">
+      <p><strong class="text-gray-600">Developer:</strong> Taucity · <a href="mailto:contact@taucity.xyz" class="underline hover:text-gray-900">contact@taucity.xyz</a></p>
+      <p class="mt-1"><a href="/privacy" class="underline hover:text-gray-900">Privacy Policy</a> · <a href="/terms" class="underline hover:text-gray-900">Terms of Service</a></p>
+    </div>
+  </section>
+</Base>

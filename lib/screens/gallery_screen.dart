@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -7,16 +8,26 @@ import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/outfit_sticker.dart';
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
+import '../services/analytics_service.dart';
+import '../services/growth_service.dart';
+import '../services/notification_service.dart';
+import '../services/pro_access_service.dart';
+import '../services/revenuecat_service.dart';
+import '../services/sticker_style_service.dart';
 import '../services/subject_cutout_service.dart';
+import '../services/widget_service.dart';
 import '../widgets/gallery_bottom_sheet.dart';
 import '../widgets/genie_flight.dart';
 import '../widgets/sticker_grid.dart';
 import 'photo_preview_screen.dart';
+import 'growth_prompt_sheet.dart';
+import 'paywall_screen.dart';
 import 'sticker_detail_screen.dart';
 
 /// Apple Notes dark-mode palette.
@@ -57,6 +68,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   /// Delete mode: stickers shake with × badges.
   bool _jiggling = false;
+
+  /// Solid M3 shape backdrop behind small grid stickers. Toggleable from
+  /// the appbar; persisted next to stickers.json.
+  bool _shapeBgOn = true;
 
   /// File path of a trashed sticker awaiting the Undo window, if any.
   String? _trashPath;
@@ -239,9 +254,84 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   Future<void> _boot() async {
     await _loadStickers();
+    await _loadShapeBgFlag();
     if (mounted) setState(() {});
     await _migrateLegacy();
+    // One-shot soft paywall on first gallery entry (post-onboarding).
+    // Dismissable; the hard gate fires at the 30-sticker limit.
+    if (await ProAccessService.consumeOnboardingPaywall()) {
+      await RevenueCatService.instance.ensureInitialized();
+      if (!RevenueCatService.instance.isPro && mounted) {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        if (!mounted) return;
+        await PaywallScreen.show(
+          context,
+          locked: false,
+          placement: 'onboarding',
+        );
+      }
+    }
   }
+
+  Future<void> _loadShapeBgFlag() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final flag = File('${dir.path}/shape_bg.txt');
+      if (await flag.exists()) {
+        _shapeBgOn = (await flag.readAsString()).trim() != '0';
+      }
+    } catch (_) {
+      // Missing or unreadable flag: keep the default (on).
+    }
+  }
+
+  /// Appbar button: straight on/off toggle for the shape backdrop.
+  /// Appbar heart button: every open advances a manual rotation through
+  /// review → share → widgets (+ reminders while permission is missing).
+  /// No count/throttle/snooze gates — the user asked for it.
+  Future<void> _openSupportSheet() async {
+    if (!mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+
+    // Eligible actions in rotation order; reminders joins the front
+    // until the notification permission is granted.
+    final actions = <GrowthAction>[
+      GrowthAction.review,
+      GrowthAction.share,
+      GrowthAction.widgets,
+    ];
+    try {
+      if (!await NotificationService.areEnabled()) {
+        actions.insert(0, GrowthAction.reminders);
+      }
+    } catch (_) {}
+
+    final step = prefs.getInt('support_manual_rotation') ?? 0;
+    await prefs.setInt('support_manual_rotation', step + 1);
+    final action = actions[step % actions.length];
+
+    if (!mounted) return;
+    await showGrowthPromptSheet(context, action);
+  }
+
+  void _toggleShapeBg() {
+    AppHaptics.tap();
+    setState(() => _shapeBgOn = !_shapeBgOn);
+    _persistShapeBg();
+  }
+
+  Future<void> _persistShapeBg() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      await File('${dir.path}/shape_bg.txt')
+          .writeAsString(_shapeBgOn ? '1' : '0');
+    } catch (_) {
+      // Toggle still applies for this session if the write fails.
+    }
+  }
+
+
 
   /// One-time backfill for stickers saved halo-free while live borders
   /// were in testing: stamps the even white ring in place, then marks
@@ -283,6 +373,18 @@ class _GalleryScreenState extends State<GalleryScreen> {
   }
 
   Future<void> _onGalleryPick(AssetEntity asset) async {
+    // Free-tier gate: 30 free stickers, then the locked paywall.
+    // Pro users and users inside quota pass straight through.
+    await RevenueCatService.instance.ensureInitialized();
+    if (!await ProAccessService.canCreateFree()) {
+      if (!mounted) return;
+      await PaywallScreen.show(
+        context,
+        locked: true,
+        placement: 'create_gate',
+      );
+      if (!RevenueCatService.instance.isPro) return;
+    }
     String? pickedPath;
     try {
       // Preferred: read the original bytes and write a fresh temp file.
@@ -308,33 +410,49 @@ class _GalleryScreenState extends State<GalleryScreen> {
     final imagePath = pickedPath;
 
     // Id is minted upfront so the preview and the future grid cell share
-    // one Hero tag for the genie flight home.
+    // one Hero tag for the genie flight home. The shape is rolled from
+    // the photo's asset id — the same shape its sheet thumbnail shows.
     final stickerId = const Uuid().v4();
     final heroTag = 'sticker-$stickerId';
+    final shapeIndex = randomShapeIndexForAsset(asset.id);
 
-    final savedPath = await Navigator.push<String>(
+    final saved = await Navigator.push<(String?, StickerStyle)>(
       context,
-      geniePageRoute<String>(
+      zoomPageRoute<(String?, StickerStyle)>(
         page: PhotoPreviewScreen(
           imagePath: imagePath,
           heroTag: heroTag,
+          initialShapeIndex: shapeIndex,
           // Insert the cell while the preview is still up so the Hero
           // destination exists when the pop flight begins.
-          onSaved: (path) => _insertSticker(stickerId, path),
+          onSaved: (path, style) => _insertSticker(stickerId, path, style),
         ),
       ),
     );
     // Normally already inserted via onSaved; this is just a safety net.
+    final savedPath = saved?.$1;
     if (savedPath != null &&
         !_stickers.any((s) => s.imagePath == savedPath)) {
-      await _insertSticker(const Uuid().v4(), savedPath);
+      await _insertSticker(
+        const Uuid().v4(),
+        savedPath,
+        saved?.$2 ??
+            StickerStyle(
+              dominantColor: kFallbackStickerColor,
+              shapeIndex: shapeIndex,
+            ),
+      );
     }
   }
 
   /// Inserts the sticker at the top and scrolls it into view for landing.
   /// The touchdown (confetti + milestone tick) is driven by the landing
   /// cell itself via [_onTouchdown], timed to the genie flight.
-  Future<void> _insertSticker(String id, String path) async {
+  Future<void> _insertSticker(
+    String id,
+    String path,
+    StickerStyle style,
+  ) async {
     if (_stickers.any((s) => s.id == id)) return;
     _pendingMilestone = _stickers.isEmpty;
     final sticker = OutfitSticker(
@@ -343,12 +461,18 @@ class _GalleryScreenState extends State<GalleryScreen> {
       createdAt: DateTime.now(),
       // White halo is baked at cut time.
       haloStripped: false,
+      // Image-derived M3 style: dominant color + hue-picked shape.
+      shapeIndex: style.shapeIndex,
+      dominantColor: style.dominantColor,
     );
     if (!mounted) return;
     setState(() {
       _stickers.insert(0, sticker);
       _justAddedId = id;
     });
+    // Core-loop funnel: every save counts; the first one is activation.
+    AnalyticsService.instance.logStickerSaved(totalStickers: _stickers.length);
+    unawaited(ProAccessService.recordStickerSaved());
     await _saveStickers();
     if (_gridController.hasClients) {
       await _gridController.animateTo(
@@ -356,6 +480,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
         duration: AppMotion.standard,
         curve: AppMotion.appleEase,
       );
+    }
+    // Growth loop: widgets refresh every save; the suggestion sheet
+    // (review/share/widget prompt) fires on the 1st + every 5th save,
+    // 5s after touchdown.
+    unawaited(WidgetService.updateAll());
+    if (mounted) {
+      unawaited(GrowthService.onStickerAdded(context));
     }
   }
 
@@ -380,8 +511,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
     });
   }
 
-  void _openDetail(OutfitSticker sticker) async {
-    await Navigator.push(
+  void _openDetail(OutfitSticker sticker) {
+    Navigator.push(
       context,
       geniePageRoute(
         page: StickerDetailScreen(
@@ -414,32 +545,49 @@ class _GalleryScreenState extends State<GalleryScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
+        // Taller bar so the 2x logo (64px) and 2x wordmark fit cleanly.
+        toolbarHeight: 80,
         title: Row(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.all(2),
+            // Transparent logo, no chip behind it.
+            SizedBox(
+              width: 64,
+              height: 64,
               child: Image.asset(
-                'assets/logo.png',
+                'assets/logo3.png',
                 fit: BoxFit.contain,
               ),
             ),
-            const SizedBox(width: 10),
-            const Text(
-              'FitCheck',
-              style: TextStyle(
-                color: NotesColors.text,
-                fontWeight: FontWeight.w600,
-              ),
+            const SizedBox(width: 12),
+            // StickerPants wordmark image (2:1).
+            Image.asset(
+              'assets/stickerpants.png',
+              height: 57,
+              fit: BoxFit.contain,
             ),
           ],
-        ),
-        actions: [
+        ),        actions: [
+          // Support StickerPants: opens the growth sheet on demand —
+          // review, share, widgets, or reminders (no throttle, so it's
+          // always available from here; snooze does not apply either,
+          // because the user asked for it themselves).
+          IconButton(
+            tooltip: 'Support StickerPants',
+            onPressed: _openSupportSheet,
+            icon: const Icon(
+              Icons.favorite_border_rounded,
+              color: NotesColors.text,
+            ),
+          ),
+          // Solid shape-backdrop toggle for grid stickers.
+          IconButton(
+            tooltip: 'Background shape',
+            onPressed: _toggleShapeBg,
+            icon: Icon(
+              _shapeBgOn ? Icons.auto_awesome : Icons.image_outlined,
+              color: _shapeBgOn ? NotesColors.yellow : NotesColors.text,
+            ),
+          ),
           // iOS-style Done exits delete mode.
           if (_jiggling)
             TextButton(
@@ -469,6 +617,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 stickers: _stickers,
                 onTap: _openDetail,
                 controller: _gridController,
+                shapeBg: _shapeBgOn,
+                shapeScale: 0.7,
                 justAddedId: _justAddedId,
                 onTouchdown: _onTouchdown,
                 jiggling: _jiggling,

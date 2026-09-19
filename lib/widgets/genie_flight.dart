@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 /// How long a sticker flight lasts. Kept in one place so the route's
@@ -16,6 +14,13 @@ PageRouteBuilder<T> geniePageRoute<T>({required Widget page}) {
   return PageRouteBuilder<T>(
     transitionDuration: const Duration(milliseconds: 160),
     reverseTransitionDuration: kGenieFlight,
+    // Non-opaque so the homescreen grid stays composited underneath —
+    // the detail screen's BackdropFilter needs real content to blur,
+    // and an opaque route would drop the grid from the scene entirely.
+    opaque: false,
+    barrierDismissible: false,
+    barrierLabel: 'Dismiss',
+    barrierColor: Colors.black.withValues(alpha: 0.25),
     pageBuilder: (_, _, _) => page,
     transitionsBuilder: (context, animation, _, child) {
       return FadeTransition(
@@ -29,27 +34,31 @@ PageRouteBuilder<T> geniePageRoute<T>({required Widget page}) {
   );
 }
 
-/// Subtle iOS jelly for fullscreen trips: straight path (linear direction
-/// intact), gentle scale overshoot peaking near touchdown and settling
-/// exactly to 1.0 at arrival. Transform-only.
-Widget jellyShuttleBuilder(
-  BuildContext flightContext,
-  Animation<double> animation,
-  HeroFlightDirection flightDirection,
-  BuildContext fromHeroContext,
-  BuildContext toHeroContext,
-) {
-  final Hero toHero = toHeroContext.widget as Hero;
-  return AnimatedBuilder(
-    animation: animation,
-    builder: (context, child) {
-      final t = animation.value;
-      // Overshoot swells to ~1.04 around 85% of the flight, then relaxes
-      // to exactly 1.0 at touchdown.
-      final wobble = math.sin(t * math.pi) * (1 - t);
-      final scale = 1.0 + 0.04 * wobble + 0.02 * math.sin(t * 2 * math.pi) * (1 - t);
-      return Transform.scale(scale: scale, child: child);
+/// Container-transform-style route for the photo preview: the picked
+/// photo zooms up softly instead of popping in. Non-opaque so the
+/// frosted-glass backdrop stays composited over the live grid.
+PageRouteBuilder<T> zoomPageRoute<T>({required Widget page}) {
+  return PageRouteBuilder<T>(
+    transitionDuration: const Duration(milliseconds: 260),
+    reverseTransitionDuration: const Duration(milliseconds: 280),
+    opaque: false,
+    barrierDismissible: false,
+    barrierLabel: 'Dismiss',
+    barrierColor: Colors.black.withValues(alpha: 0.25),
+    pageBuilder: (_, _, _) => page,
+    transitionsBuilder: (context, animation, _, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.9, end: 1.0).animate(curved),
+          child: child,
+        ),
+      );
     },
-    child: toHero.child,
   );
 }

@@ -1,0 +1,63 @@
+---
+import Base from '../layouts/Base.astro';
+
+const title = 'Privacy Policy';
+const description = 'Privacy Policy for StickerPants — what data we collect, how we use it, and your rights.';
+---
+
+<Base title={title} description={description}>
+  <section class="py-12 sm:py-16 px-6 lg:px-8">
+    <div class="max-w-[720px] mx-auto">
+      <a class="back inline-block mb-8 font-medium text-gray-900 hover:text-black transition" href="/">&larr; StickerPants</a>
+
+      <h1 class="text-4xl sm:text-5xl font-bold text-gray-900 mb-2">Privacy Policy</h1>
+      <p class="subtitle text-gray-500 text-sm mb-10">StickerPants — Last updated: September 2026</p>
+
+      <div class="space-y-4 text-gray-700">
+        <p>StickerPants ("we", "our", "app") respects your privacy. This policy explains what data we collect, how we use it, and your rights regarding your information. The short version: your photos never leave your phone, there is no account, and we collect only the minimum analytics needed to improve the app.</p>
+
+        <h2 class="text-2xl font-semibold text-gray-900 pt-6">Data We Collect</h2>
+        <ul class="list-disc pl-6 space-y-2">
+          <li><strong>Photos you pick</strong> — Read from your gallery only to create the stickers you ask for. Cutout runs on-device with local machine learning. Photos are never uploaded to our servers, never shared, and never used for advertising.</li>
+          <li><strong>App preferences</strong> — On-device settings (e.g. onboarding state, reminder choices) stored locally on your phone.</li>
+          <li><strong>Anonymous usage analytics</strong> — App events (such as app opens, onboarding steps, sticker saves, and paywall views) collected via <strong>Firebase Analytics (Google)</strong>; landing-page events (such as Play Store button clicks) collected via <strong>Google Analytics</strong> and always prefixed <code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm">web_</code> so they stay separate from app events. Analytics contain no photo content and no personally identifying information.</li>
+          <li><strong>Subscription status</strong> — Processed by <strong>Google Play Billing</strong> and <strong>RevenueCat</strong> for entitlement checks. We never see or store your card, bank, or full payment details.</li>
+          <li><strong>Device information</strong> — Used solely for scheduling local daily reminders you opt into.</li>
+        </ul>
+        <p>We do not offer accounts or sign-in, so we do not collect names, email addresses, or passwords.</p>
+
+        <h2 class="text-2xl font-semibold text-gray-900 pt-6">How We Use Data</h2>
+        <ul class="list-disc pl-6 space-y-2">
+          <li>Photos are processed locally on your device to generate stickers. They are not transmitted anywhere.</li>
+          <li>Analytics events are used only to understand feature usage and fix bugs.</li>
+          <li>Subscription status is used only to unlock StickerPants Pro features you paid for.</li>
+          <li>Notification permission, if granted, is used only for the daily outfit reminders you can turn off anytime in system settings.</li>
+        </ul>
+
+        <h2 class="text-2xl font-semibold text-gray-900 pt-6">Data Sharing</h2>
+        <p>We do not sell your data. Data is shared only with essential service providers:</p>
+        <ul class="list-disc pl-6 space-y-2">
+          <li><strong>Google Play</strong> — Processes Pro subscription payments as Merchant of Record under Google's <a href="https://policies.google.com/privacy" target="_blank" rel="noopener" class="underline hover:text-gray-900">privacy policy</a>. We never see your payment details.</li>
+          <li><strong>RevenueCat</strong> — Verifies subscription entitlements across devices. No payment details pass through our servers.</li>
+          <li><strong>Google (Firebase Analytics / GA4)</strong> — Anonymous app and web analytics. No photo content is ever sent to analytics.</li>
+        </ul>
+
+        <h2 class="text-2xl font-semibold text-gray-900 pt-6">Data Deletion</h2>
+        <p>There is no account to delete: all app data lives on your device and is permanently removed when you uninstall the app. For analytics-deletion or other privacy requests, email us (below) and we will honor them within 30 days.</p>
+
+        <h2 class="text-2xl font-semibold text-gray-900 pt-6">Children</h2>
+        <p>StickerPants is a general-audience app and is not directed at children under 13. If you believe a child has provided us personal information, contact us and we will delete it.</p>
+
+        <h2 class="text-2xl font-semibold text-gray-900 pt-6">Third-Party Links</h2>
+        <p>The app can share stickers to WhatsApp, which is governed by WhatsApp's own terms and privacy policy. This app contains no third-party advertisements.</p>
+
+        <h2 class="text-2xl font-semibold text-gray-900 pt-6">Changes to This Policy</h2>
+        <p>We may update this policy from time to time. Changes will be reflected in the app and on this page.</p>
+
+        <h2 class="text-2xl font-semibold text-gray-900 pt-6">Contact</h2>
+        <p>For questions or privacy requests:<br />
+        Email: <a href="mailto:contact@taucity.xyz" class="text-gray-900 underline hover:text-black transition">contact@taucity.xyz</a></p>
+      </div>
+    </div>
+  </section>
+</Base>

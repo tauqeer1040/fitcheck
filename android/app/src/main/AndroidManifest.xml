@@ -14,8 +14,16 @@
             <data android:mimeType="image/*"/>
         </intent>
     </queries>
+    <!-- Visibility for the WhatsApp sticker-pack add intent (official
+         third-party sticker API). Without this, Android 11+ package
+         filtering hides both WhatsApp flavors from the chooser. -->
+    <queries>
+        <intent>
+            <action android:name="com.whatsapp.intent.action.ENABLE_STICKER_PACK"/>
+        </intent>
+    </queries>
     <application
-        android:label="fitcheck"
+        android:label="StickerPants"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -46,6 +54,41 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Official WhatsApp third-party sticker API: serves the user's
+             generated pack (filesDir/sticker_packs/) when WhatsApp fetches
+             metadata and sticker assets during pack add. Exported with the
+             WhatsApp read permission exactly as the sample apps declare. -->
+        <provider
+            android:name=".StickerContentProvider"
+            android:authorities="com.taucity.stickerpants.stickercontentprovider"
+            android:exported="true"
+            android:enabled="true"
+            android:readPermission="com.whatsapp.sticker.READ" />
+
+        <!-- Homescreen widgets: 2x4 (three recent stickers) and 2x2
+             (latest sticker). home_widget's provider base class handles
+             the SharedPreferences bridge from Dart. -->
+        <receiver
+            android:name=".RecentStickersWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/recent_stickers_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".LatestStickerWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/latest_sticker_widget_info" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

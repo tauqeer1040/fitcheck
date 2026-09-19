@@ -1,4 +1,15 @@
 # Miscellaneous
+# Secrets: release keystore, signing passwords, Play API service account,
+# Firebase config, local env. None of these are ever committed.
+.env
+*.jks
+*.keystore
+android/key.properties
+android/fbm/
+android/app/google-services.json
+android/build/
+sites/*/dist/
+sites/*/node_modules/
 *.class
 *.log
 *.pyc
@@ -43,3 +54,4 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+sites/*/.astro

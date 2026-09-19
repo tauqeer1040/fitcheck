@@ -59,7 +59,17 @@ class Pressable extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
-  const Pressable({super.key, required this.child, this.onTap, this.onLongPress});
+  /// Set false for pressables whose size must never change on hold
+  /// (e.g. grid cells entering jiggle mode).
+  final bool scaleOnPress;
+
+  const Pressable({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.onLongPress,
+    this.scaleOnPress = true,
+  });
 
   @override
   State<Pressable> createState() => _PressableState();
@@ -83,7 +93,7 @@ class _PressableState extends State<Pressable> {
             },
       onLongPress: widget.onLongPress,
       child: AnimatedScale(
-        scale: _down ? AppMotion.pressScale : 1.0,
+        scale: (_down && widget.scaleOnPress) ? AppMotion.pressScale : 1.0,
         duration: AppMotion.micro,
         curve: AppMotion.appleEase,
         child: widget.child,

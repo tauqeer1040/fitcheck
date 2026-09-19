@@ -8,7 +8,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../models/outfit_sticker.dart';
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
+import '../services/sticker_style_service.dart';
 import 'genie_flight.dart';
+import 'shaped_sticker.dart';
 
 /// Homescreen sticker board: stickers sit in aligned rows (max [maxColumns]
 /// per row, partial last row hugs the left), the board scrolls vertically.
@@ -49,6 +51,12 @@ class StickerGrid extends StatefulWidget {
   /// never hides underneath it.
   final double bottomInset;
 
+  /// Solid M3 shape backdrop behind cells. Off = bare cutout art.
+  final bool shapeBg;
+
+  /// Silhouette size relative to the art box (fixed 70%, user-tuned).
+  final double shapeScale;
+
   static const int defaultColumns = 5;
   static const int minColumns = 3;
   static const int maxColumns = 6;
@@ -58,6 +66,8 @@ class StickerGrid extends StatefulWidget {
     required this.stickers,
     required this.onTap,
     this.controller,
+    this.shapeBg = true,
+    this.shapeScale = 0.7,
     this.justAddedId,
     this.onLanded,
     this.onTouchdown,
@@ -76,6 +86,55 @@ class _StickerGridState extends State<StickerGrid>
     with TickerProviderStateMixin {
   int _columns = StickerGrid.defaultColumns;
   double _startSpan = StickerGrid.defaultColumns.toDouble();
+
+  /// CTA fun lines: a fresh one every app load, rotating on each tap of
+  /// the empty state.
+  static const List<String> _pickLines = [
+    'Pick your photo to add',
+    "Oh, we're doing this again? Fine. Pick a photo.",
+    'That fit is a crime. Document the evidence.',
+    'Congrats on the outfit. Nobody asked, but congrats.',
+    "I've seen better fits. Yours is... acceptable.",
+    "A photo won't fix that wardrobe. Try anyway.",
+    'Your outfit called. It wants to be a sticker. Desperate.',
+    "Pick one. I'm not begging. Again.",
+    'Absolutely devastating drip. Allegedly.',
+    'That shirt is carrying your entire personality. Frame it.',
+    'Another selfie? Bold. Wrong, but bold.',
+    'The stickerboard will expose your laundry cycle. Proceed.',
+    "Dress like that again and I'm calling someone.",
+    'Certified fashion moment. I guess.',
+    'The fit is mid. The sticker will be glorious.',
+    "Stickers can't fix your outfit. They can immortalize it.",
+    'The pants are watching. Choose wisely.',
+    "This app has seen your outfits. It's not judging. It is.",
+    'Warning: drip levels barely above acceptable.',
+    'You survived the day in that. Reward yourself.',
+  ];
+
+  /// Randomized per app launch so every load feels fresh.
+  late int _lineIndex =
+      DateTime.now().millisecondsSinceEpoch % _pickLines.length;
+
+  void _rotatePickLine() {
+    AppHaptics.tap();
+    setState(() => _lineIndex = (_lineIndex + 1) % _pickLines.length);
+  }
+
+  /// Arrow: pinned 130deg (the keeper angle), tap it to swap art with a
+  /// jelly wobble.
+  final double _arrowAngle = 130 * math.pi / 180;
+  bool _arrowTwo = true;
+  late final AnimationController _arrowWobble = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 600),
+  );
+
+  void _swapArrow() {
+    AppHaptics.tap();
+    setState(() => _arrowTwo = !_arrowTwo);
+    _arrowWobble.forward(from: 0);
+  }
 
   /// Live pinch preview: rubber-banded scale + focal anchor. Springs back
   /// to 1.0 on release while the snapped column count stays.
@@ -139,6 +198,7 @@ class _StickerGridState extends State<StickerGrid>
 
   @override
   void dispose() {
+    _arrowWobble.dispose();
     _jiggle.dispose();
     _settle.dispose();
     super.dispose();
@@ -248,30 +308,93 @@ class _StickerGridState extends State<StickerGrid>
   @override
   Widget build(BuildContext context) {
     if (widget.stickers.isEmpty) {
-      return Center(
+      // No stickers: brand block sits at the top of the board.
+      return SingleChildScrollView(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(Icons.checkroom, size: 80, color: Colors.grey.shade700),
-            const SizedBox(height: 16),
-            Text(
-              'No outfit stickers yet',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Colors.grey.shade500,
-              ),
-            ),
             const SizedBox(height: 8),
-            Text(
-              'Pick a photo below to add your first outfit',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.grey.shade600,
-              ),
-            ),
+            _buildEmptyState(),
           ],
         ),
       );
     }
 
+    // With stickers: same brand block, but living INSIDE the grid as an
+    // ever-present footer after the last row (scrolls with the content).
+    return _buildGrid();
+  }
+
+  /// Logo + wordmark + rotating fun CTA + big arrow pointing at the
+  /// sheet below. Any tap on the empty state spins a new line.
+  Widget _buildEmptyState() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _rotatePickLine,
+      child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Image.asset(
+          'assets/logo3.png',
+          width: 160,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(height: 8),
+        Image.asset(
+          'assets/stickerpants.png',
+          width: 180,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _pickLines[_lineIndex],
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Colors.grey.shade600,
+          ),
+        ).animate(key: ValueKey(_lineIndex)).fadeIn(
+              duration: AppMotion.standard,
+              curve: AppMotion.appleEase,
+            ),
+        const SizedBox(height: 8),
+        // Arrow: tap to swap art with a jelly bounce. Angle is pinned
+        // at the keeper 130deg.
+        Transform.rotate(
+          angle: _arrowAngle,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _swapArrow,
+            child: AnimatedBuilder(
+              animation: _arrowWobble,
+              builder: (context, child) {
+                // Decaying sine wobble = jelly.
+                final t = _arrowWobble.value;
+                final s =
+                    1.0 + 0.18 * math.sin(t * 2 * math.pi) * (1 - t);
+                return Transform.scale(scale: s, child: child);
+              },
+              child: Image.asset(
+                _arrowTwo
+                    ? 'assets/arrow2.png'
+                    : 'assets/arrow.png',
+                height: 300,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+      ],
+      ),
+    );
+  }
+
+  Widget _buildGrid() {
+    // One full grid-row height of breathing room between the last
+    // sticker row and the brand footer. Mirrors the delegate's cell math
+    // (12px side padding, 8px spacing, portrait 0.75 aspect) so it stays
+    // exactly a row tall while pinch-zoom changes the column count.
+    final screenW = MediaQuery.of(context).size.width;
+    final cellW = (screenW - 24 - 8 * (_columns - 1)) / _columns;
+    final rowHeight = cellW / 0.75;
     return Scrollbar(
       // Raw pointer tracking drives pinch (arena-proof); tap arena keeps
       // background-tap and double-tap toggle. Scroll locks while pinching.
@@ -290,26 +413,30 @@ class _StickerGridState extends State<StickerGrid>
           child: Transform.scale(
             scale: _liveScale,
             origin: _liveFocal,
-            child: GridView.builder(
+            child: CustomScrollView(
               physics: _pinching
                   ? const NeverScrollableScrollPhysics()
                   : null,
-          controller: widget.controller,
-          padding: EdgeInsets.fromLTRB(12, 12, 12, 12 + widget.bottomInset),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: _columns,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            // Portrait cells suit full-body cutouts; partial last rows
-            // stay left-aligned by the grid.
-            childAspectRatio: 0.75,
-          ),
-          itemCount: widget.stickers.length,
-          itemBuilder: (context, index) {
+              controller: widget.controller,
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: _columns,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
+                      // Portrait cells suit full-body cutouts.
+                      childAspectRatio: 0.75,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
             final sticker = widget.stickers[index];
             Widget cell = _StickerCell(
               key: ValueKey(sticker.id),
               sticker: sticker,
+              shapeBg: widget.shapeBg,
+              shapeScale: widget.shapeScale,
               // Dead in delete mode (but still claims the tap); opens
               // fullscreen otherwise.
               onTap: widget.jiggling ? _swallowTap : () => widget.onTap(sticker),
@@ -347,8 +474,25 @@ class _StickerGridState extends State<StickerGrid>
             // Fullscreen return: lands clean — no squash, no confetti.
             // (The soft touchdown tick fires from gallery onFlightHome.)
             return cell;
-          },
-          ),
+                      },
+                      childCount: widget.stickers.length,
+                    ),
+                  ),
+                ),
+                // Ever-present brand footer INSIDE the grid: sits right
+                // after the last row, scrolls with the content, and its
+                // bottom padding keeps it clear of the gallery sheet.
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      top: rowHeight,
+                      bottom: 8 + widget.bottomInset,
+                    ),
+                    child: _buildEmptyState(),
+                  ),
+                ),
+              ],
+            ),
         ),
       ),
       ),
@@ -362,6 +506,12 @@ class _StickerCell extends StatelessWidget {  final OutfitSticker sticker;
   final bool jiggling;
   final VoidCallback? onDelete;
 
+  /// Solid shape backdrop vs bare cutout art (appbar toggle).
+  final bool shapeBg;
+
+  /// Silhouette size relative to the art box (fixed 70%, user-tuned).
+  final double shapeScale;
+
   const _StickerCell({
     super.key,
     required this.sticker,
@@ -369,6 +519,8 @@ class _StickerCell extends StatelessWidget {  final OutfitSticker sticker;
     this.onLongPress,
     this.jiggling = false,
     this.onDelete,
+    this.shapeBg = true,
+    this.shapeScale = 0.7,
   });
 
   @override
@@ -376,16 +528,29 @@ class _StickerCell extends StatelessWidget {  final OutfitSticker sticker;
     final art = Pressable(
       onTap: onTap,
       onLongPress: onLongPress,
-      // No decoration, no border, no bg — baked white ring included.
-      // Every cell is a Hero so taps zoom up to fullscreen.
+      // Hold must NOT shrink the cell: the sticker stays at full size
+      // while it starts shaking, minus-badge on top, iOS-style.
+      scaleOnPress: false,
+      // Every cell is a Hero so taps zoom up to fullscreen. With the
+      // shape toggle on: solid dominant-color M3 silhouette with the
+      // cutout overflowing it (Pixel "Shape" style). Off: bare cutout.
       child: Hero(
         tag: 'sticker-${sticker.id}',
-        child: Image.file(
-          File(sticker.imagePath),
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-        ),
+        child: shapeBg
+            ? ShapedSticker(
+                imagePath: sticker.imagePath,
+                shapeIndex:
+                    sticker.shapeIndex ?? fallbackShapeIndex(sticker.id),
+                dominantColor:
+                    sticker.dominantColor ?? kFallbackStickerColor,
+                shapeScale: shapeScale,
+              )
+            : Image.file(
+                File(sticker.imagePath),
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
       ),
     );
     if (!jiggling) return art;

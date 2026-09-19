@@ -2,7 +2,7 @@ from PIL import Image, ImageDraw
 import os
 
 # Load the logo
-logo_path = "assets/logo.png"
+logo_path = "assets/logo3.png"
 logo = Image.open(logo_path).convert("RGBA")
 
 # Add padding (same color as Android background #000000)

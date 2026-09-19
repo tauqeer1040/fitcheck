@@ -1,0 +1,195 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+}
+
+const {
+  title = 'StickerPants',
+  description = 'StickerPants turns your outfit photos into WhatsApp stickers. On-device AI cutout, sticker packs, and homescreen widgets — no account needed.',
+  image = '/images/hero.png',
+} = Astro.props;
+
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const pageTitle = Astro.url.pathname === '/'
+  ? 'StickerPants — your outfit, now a sticker | WhatsApp sticker maker'
+  : `${title} · StickerPants`;
+
+const playUrl = 'https://play.google.com/store/apps/details?id=com.taucity.stickerpants';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/images/logo.png" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="StickerPants" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={new URL(image, Astro.site)} />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={new URL(image, Astro.site)} />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="preload" as="image" href="/images/logo.png" />
+
+    <!-- GA4 web analytics. All landing events are prefixed `web_` so they
+         never mix with the app's plain events (app_opened, paywall_shown…).
+         Set PUBLIC_GA_ID at build time; untracked builds stay silent. -->
+    {import.meta.env.PUBLIC_GA_ID && (
+      <>
+        <script async src={`https://www.googletagmanager.com/gtag/js?id=${import.meta.env.PUBLIC_GA_ID}`}></script>
+        <script set:html={`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', '${import.meta.env.PUBLIC_GA_ID}');
+          document.addEventListener('click', (e) => {
+            const a = e.target.closest('a[href*="play.google.com"]');
+            if (a) gtag('event', 'web_play_click', { page: location.pathname });
+          });
+        `} />
+      </>
+    )}
+
+    <script type="application/ld+json" set:html={JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'MobileApplication',
+      name: 'StickerPants',
+      url: 'https://stickerpants.taucity.xyz',
+      applicationCategory: 'EntertainmentApplication',
+      operatingSystem: 'Android',
+      description: 'StickerPants turns your outfit photos into WhatsApp stickers with on-device AI cutout. No account needed.',
+      inLanguage: 'en',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    })} />
+  </head>
+  <body>
+    <!-- Navbar - near-black overlay -->
+    <nav style="padding-top: 15px;" class="fixed top-0 left-0 right-0 z-50 bg-[#1c1c1e]/80 backdrop-blur-xl border-b border-white/10">
+      <div class="max-w-7xl mx-auto px-6 lg:px-8">
+        <div class="flex justify-between items-center h-16">
+          <div class="flex items-center gap-2">
+            <a href="/" class="flex items-center gap-2">
+              <img src="/images/logo.png" alt="StickerPants" class="h-9 w-auto rounded-lg" />
+              <span class="text-white font-extrabold text-lg tracking-tight">StickerPants</span>
+            </a>
+          </div>
+          <div class="hidden md:flex items-center space-x-6 lg:space-x-8">
+            <a href="/#how" class="text-white/80 hover:text-white transition text-sm lg:text-base">How it works</a>
+            <a href="/#features" class="text-white/80 hover:text-white transition text-sm lg:text-base">Features</a>
+            <a href="/#faq" class="text-white/80 hover:text-white transition text-sm lg:text-base">FAQ</a>
+            <a href="/privacy" class="text-white/80 hover:text-white transition text-sm lg:text-base">Privacy</a>
+            <a href="/terms" class="text-white/80 hover:text-white transition text-sm lg:text-base">Terms</a>
+            <a href={playUrl} target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-[#ffd60a] text-black px-5 lg:px-6 rounded-2xl text-sm lg:text-base whitespace-nowrap font-bold shadow-lg hover:brightness-95 transition-all duration-200">
+              Get it on Play
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+            </a>
+          </div>
+          <button id="mobile-menu-btn" class="md:hidden p-2 text-white" aria-label="Open menu">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <!-- Mobile menu -->
+      <div id="mobile-menu" class="hidden md:hidden bg-[#1c1c1e]/95 backdrop-blur-xl border-t border-white/10 px-6 pb-4">
+        <div class="flex flex-col space-y-3 pt-3">
+          <a href="/#how" class="text-white/80 hover:text-white transition text-sm">How it works</a>
+          <a href="/#features" class="text-white/80 hover:text-white transition text-sm">Features</a>
+          <a href="/#faq" class="text-white/80 hover:text-white transition text-sm">FAQ</a>
+          <a href="/privacy" class="text-white/80 hover:text-white transition text-sm">Privacy</a>
+          <a href="/terms" class="text-white/80 hover:text-white transition text-sm">Terms</a>
+          <a href={playUrl} target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 bg-[#ffd60a] text-black px-5 py-2.5 rounded-2xl text-sm text-center whitespace-nowrap w-fit font-bold transition-all duration-200">
+            Get it on Play
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Spacer for fixed navbar -->
+    <div class="h-[calc(2rem+4rem)]"></div>
+
+    <slot />
+
+    <!-- Fixed floating CTA -->
+    <div class="fixed bottom-0 left-0 right-0 z-50 p-4 sm:p-5 pointer-events-none" style="background: rgba(28, 28, 30, 0.72); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-top: 0.5px solid rgba(255, 255, 255, 0.12);">
+      <div class="max-w-xl mx-auto pointer-events-auto">
+        <a href={playUrl} target="_blank" rel="noopener" class="flex items-center justify-center gap-2 w-full bg-[#ffd60a] text-black py-3.5 rounded-2xl font-bold text-lg shadow-lg hover:brightness-95 transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]">
+          <span>Get StickerPants free</span>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="text-white py-12 sm:py-16 px-6 sm:px-8 rounded-t-[3rem] mb-20" style="background-color: #111;">
+      <div class="max-w-6xl mx-auto">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10 sm:mb-12">
+          <div>
+            <h3 class="font-semibold text-xs sm:text-sm uppercase tracking-wider mb-4 text-white/80">Product</h3>
+            <ul class="space-y-2 sm:space-y-3 text-sm sm:text-base">
+              <li><a href="/" class="hover:text-white/70 transition">Home</a></li>
+              <li><a href={playUrl} target="_blank" rel="noopener" class="hover:text-white/70 transition">Android App</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="font-semibold text-xs sm:text-sm uppercase tracking-wider mb-4 text-white/80">Explore</h3>
+            <ul class="space-y-2 sm:space-y-3 text-sm sm:text-base">
+              <li><a href="/#how" class="hover:text-white/70 transition">How it works</a></li>
+              <li><a href="/#features" class="hover:text-white/70 transition">Features</a></li>
+              <li><a href="/#faq" class="hover:text-white/70 transition">FAQ</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="font-semibold text-xs sm:text-sm uppercase tracking-wider mb-4 text-white/80">Company</h3>
+            <ul class="space-y-2 sm:space-y-3 text-sm sm:text-base">
+              <li><a href="/privacy" class="hover:text-white/70 transition">Privacy Policy</a></li>
+              <li><a href="/terms" class="hover:text-white/70 transition">Terms of Service</a></li>
+              <li><a href="mailto:contact@taucity.xyz" class="hover:text-white/70 transition">Contact</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="font-semibold text-xs sm:text-sm uppercase tracking-wider mb-4 text-white/80">Get started</h3>
+            <a href={playUrl} target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-[#ffd60a] text-black font-bold px-6 py-3 rounded-2xl shadow-lg hover:brightness-95 transition-all duration-200">
+              Get it on Play
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+            </a>
+          </div>
+        </div>
+        <div class="border-t border-white/30 pt-6 sm:pt-8 flex flex-col items-center gap-3">
+          <img src="/images/logo.png" alt="StickerPants" class="h-8 w-auto rounded-lg" />
+          <p class="text-xs sm:text-sm text-white/80 text-center">&copy; {new Date().getFullYear()} StickerPants · Taucity. All Rights Reserved</p>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById('mobile-menu-btn')?.addEventListener('click', () => {
+        document.getElementById('mobile-menu')?.classList.toggle('hidden');
+      });
+    </script>
+  </body>
+</html>
