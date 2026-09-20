@@ -78,9 +78,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
   bool _shapeBgOn = true;
   int _indicatorShape = 7; // Shapes.arch
 
-  /// Shape-lab sizes (persisted): grid cell backdrops + wordmark shadow.
-  /// Fullscreen scale lives in the detail screen (own storage key).
-  double _shapeScaleGrid = 0.7;
+  /// Wordmark shadow height multiplier (shape lab). Sticker backdrops
+  /// are hardcoded to 1.0 — not user-tunable.
   double _markScale = 1.0;
 
   /// File path of a trashed sticker awaiting the Undo window, if any.
@@ -297,39 +296,24 @@ class _GalleryScreenState extends State<GalleryScreen> {
       final prefs = await SharedPreferences.getInstance();
       final idx = prefs.getInt('indicator_shape_index');
       if (idx != null) _indicatorShape = idx % kStyleShapes.length;
-      final grid = prefs.getDouble('shape_scale_grid');
-      if (grid != null) _shapeScaleGrid = grid.clamp(0.3, 1.2);
       final mark = prefs.getDouble('wordmark_shadow_scale');
       if (mark != null) _markScale = mark.clamp(0.5, 1.5);
     } catch (_) {}
   }
 
-  /// Wordmark long-press: shape lab bottom sheet (grid/full/wordmark
-  /// sizes). Grid + wordmark apply live here; fullscreen reads its
-  /// own key when opened.
+  /// Wordmark long-press: wordmark-shadow size slider. Sticker
+  /// backdrops are hardcoded to 1.0.
   Future<void> _openShapeLab() async {
     if (!mounted) return;
     await showShapeLab(
       context,
-      initial: ShapeLabValues(
-        grid: _shapeScaleGrid,
-        full: (await SharedPreferences.getInstance())
-                .getDouble('shape_scale_full')
-                ?.clamp(0.3, 1.2) ??
-            0.7,
-        mark: _markScale,
-      ),
+      initial: _markScale,
       onChanged: (v) async {
         if (!mounted) return;
-        setState(() {
-          _shapeScaleGrid = v.grid;
-          _markScale = v.mark;
-        });
+        setState(() => _markScale = v);
         try {
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setDouble('shape_scale_grid', v.grid);
-          await prefs.setDouble('shape_scale_full', v.full);
-          await prefs.setDouble('wordmark_shadow_scale', v.mark);
+          await prefs.setDouble('wordmark_shadow_scale', v);
         } catch (_) {}
       },
     );
@@ -724,7 +708,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 controller: _gridController,
                 shapeBg: _shapeBgOn,
                 indicatorShape: _indicatorShape,
-                shapeScale: _shapeScaleGrid,
+                shapeScale: 1.0,
                 markScale: _markScale,
                 justAddedId: _justAddedId,
                 onTouchdown: _onTouchdown,

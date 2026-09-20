@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:dismissible_page/dismissible_page.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../models/outfit_sticker.dart';
@@ -75,10 +74,6 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
   late final int _shape = widget.sticker.shapeIndex ??
       fallbackShapeIndex(widget.sticker.id);
 
-  /// Backdrop scale from the shape lab (own storage key so the
-  /// fullscreen tune is independent of the grid tune).
-  double _shapeScale = 0.7;
-
   @override
   void initState() {
     super.initState();
@@ -86,15 +81,6 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
       vsync: this,
       duration: const Duration(milliseconds: 280),
     )..forward();
-    _loadShapeScale();
-  }
-
-  Future<void> _loadShapeScale() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final v = prefs.getDouble('shape_scale_full');
-      if (v != null && mounted) setState(() => _shapeScale = v.clamp(0.3, 1.2));
-    } catch (_) {}
   }
 
   /// Animated mirror of the DismissiblePage drag (0.0–1.0). Fades the
@@ -196,7 +182,8 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
                             imagePath: widget.sticker.imagePath,
                             // Stored shape: identical to the grid cell.
                             shapeIndex: _shape,
-                            shapeScale: _shapeScale,
+                            // Locked: full-bleed silhouette, not tunable.
+                            shapeScale: 1.0,
                             rotateSilhouette: true,
                             dominantColor: widget.sticker.dominantColor ??
                                 kFallbackStickerColor,

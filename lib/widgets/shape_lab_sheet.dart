@@ -2,38 +2,29 @@ import 'package:flutter/material.dart';
 
 import '../motion/app_haptics.dart';
 
-/// Shape lab: three sliders tuning sticker background-shape sizes.
-/// Opened by long-pressing the appbar wordmark. Values persist via
-/// the callbacks (host owns storage); changes apply live.
-class ShapeLabValues {
-  double grid;
-  double full;
-  double mark;
-
-  ShapeLabValues({
-    this.grid = 0.7,
-    this.full = 0.7,
-    this.mark = 1.0,
-  });
-}
-
+/// Shape lab: wordmark-shadow height multiplier (0.5–1.5x).
+/// Opened by long-pressing the appbar wordmark. Sticker backdrops
+/// are hardcoded to 1.0 and not tunable.
 Future<void> showShapeLab(
   BuildContext context, {
-  required ShapeLabValues initial,
-  required ValueChanged<ShapeLabValues> onChanged,
+  required double initial,
+  required ValueChanged<double> onChanged,
 }) {
   AppHaptics.tap();
   return showModalBottomSheet(
     context: context,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _ShapeLabSheet(initial: initial, onChanged: onChanged),
+    builder: (_) => _ShapeLabSheet(
+      initial: initial,
+      onChanged: onChanged,
+    ),
   );
 }
 
 class _ShapeLabSheet extends StatefulWidget {
-  final ShapeLabValues initial;
-  final ValueChanged<ShapeLabValues> onChanged;
+  final double initial;
+  final ValueChanged<double> onChanged;
 
   const _ShapeLabSheet({required this.initial, required this.onChanged});
 
@@ -42,21 +33,12 @@ class _ShapeLabSheet extends StatefulWidget {
 }
 
 class _ShapeLabSheetState extends State<_ShapeLabSheet> {
-  late ShapeLabValues _v;
+  late double _v;
 
   @override
   void initState() {
     super.initState();
-    _v = ShapeLabValues(
-      grid: widget.initial.grid,
-      full: widget.initial.full,
-      mark: widget.initial.mark,
-    );
-  }
-
-  void _apply(void Function() apply) {
-    setState(apply);
-    widget.onChanged(_v);
+    _v = widget.initial;
   }
 
   @override
@@ -73,7 +55,7 @@ class _ShapeLabSheetState extends State<_ShapeLabSheet> {
         children: [
           const Center(
             child: Text(
-              'Shape sizes',
+              'Wordmark shadow size',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 17,
@@ -82,37 +64,19 @@ class _ShapeLabSheetState extends State<_ShapeLabSheet> {
             ),
           ),
           const SizedBox(height: 8),
-          _row('Homescreen stickers', _v.grid, 0.3, 1.2,
-              (v) => _apply(() => _v.grid = v)),
-          _row('Fullscreen sticker', _v.full, 0.3, 1.2,
-              (v) => _apply(() => _v.full = v)),
-          _row('Wordmark shadow', _v.mark, 0.5, 1.5,
-              (v) => _apply(() => _v.mark = v)),
-        ],
-      ),
-    );
-  }
-
-  Widget _row(String label, double value, double min, double max,
-      ValueChanged<double> onChanged) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                label,
-                style: const TextStyle(
+              const Text(
+                'Shadow height',
+                style: TextStyle(
                   color: Colors.white,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               Text(
-                '${(value * 100).round()}%',
+                '${(_v * 100).round()}%',
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.55),
                   fontSize: 13,
@@ -130,11 +94,14 @@ class _ShapeLabSheetState extends State<_ShapeLabSheet> {
               trackHeight: 3,
             ),
             child: Slider(
-              value: value.clamp(min, max),
-              min: min,
-              max: max,
-              divisions: 18,
-              onChanged: onChanged,
+              value: _v.clamp(0.5, 1.5),
+              min: 0.5,
+              max: 1.5,
+              divisions: 20,
+              onChanged: (v) {
+                setState(() => _v = v);
+                widget.onChanged(v);
+              },
               onChangeEnd: (_) => AppHaptics.step(),
             ),
           ),

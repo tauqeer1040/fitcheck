@@ -88,7 +88,10 @@ class ShapedSticker extends StatelessWidget {
     return SizedBox(
       width: width,
       height: height,
+      // Never clip: the silhouette is sized to (or past) the box edge
+      // and must overflow visibly instead of shearing.
       child: Stack(
+        clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
           // Solid colored silhouette behind — the art overflows it.
