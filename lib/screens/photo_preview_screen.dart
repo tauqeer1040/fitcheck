@@ -11,6 +11,7 @@ import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
 import '../services/sticker_style_service.dart';
 import '../services/subject_cutout_service.dart';
+import '../widgets/morphing_shape_clip.dart';
 import '../widgets/shaped_sticker.dart';
 
 enum _CutoutState { processing, idle, lifted, dragging, floating }
@@ -419,19 +420,37 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
           child: const SizedBox.expand(),
         ),
         Positioned.fill(
-          child: M3Container(
-            kStyleShapes[_shapeIndex],
-            width: w,
-            height: h,
-            child: Opacity(
-              opacity: (1.0 - tFade).clamp(0.0, 1.0),
-              child: Image.file(
-                File(widget.imagePath),
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.high,
-              ),
-            ),
-          ),
+          // While processing, the photo breathes inside a morphing M3
+          // clip (ambient loop) instead of its fixed shape — the image
+          // itself signals work. Settles to the static shape on done.
+          child: _state == _CutoutState.processing
+              ? SizedBox(
+                  width: w,
+                  height: h,
+                  child: MorphingShapeClip(
+                    child: Opacity(
+                      opacity: (1.0 - tFade).clamp(0.0, 1.0),
+                      child: Image.file(
+                        File(widget.imagePath),
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.high,
+                      ),
+                    ),
+                  ),
+                )
+              : M3Container(
+                  kStyleShapes[_shapeIndex],
+                  width: w,
+                  height: h,
+                  child: Opacity(
+                    opacity: (1.0 - tFade).clamp(0.0, 1.0),
+                    child: Image.file(
+                      File(widget.imagePath),
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                    ),
+                  ),
+                ),
         ),
       ],
     );

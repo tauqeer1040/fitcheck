@@ -123,14 +123,17 @@ class _StickerGridState extends State<StickerGrid>
   }
 
   /// Arrow angles: arrow.png is LOCKED at 30deg; arrow2 keeps its
-  /// adjustable 130deg keeper (slider + persisted). Both arts are
-  /// content-trimmed so equal widget heights render equal sizes.
+  /// adjustable 130deg keeper (persisted, no slider UI).
+  /// Display heights differ per art: arrow.png renders at half height.
   static const double _arrowOneLockedDeg = 30;
   static const double _arrowTwoDefault = 130;
+  static const double _arrowOneHeight = 150;
+  static const double _arrowTwoHeight = 300;
   double _arrowTwoDeg = _arrowTwoDefault;
   bool _arrowTwo = true;
 
   double get _arrowDeg => _arrowTwo ? _arrowTwoDeg : _arrowOneLockedDeg;
+  double get _arrowHeight => _arrowTwo ? _arrowTwoHeight : _arrowOneHeight;
 
   Future<void> _loadArrowAngles() async {
     try {
@@ -140,14 +143,6 @@ class _StickerGridState extends State<StickerGrid>
       setState(() {
         if (two != null) _arrowTwoDeg = two.clamp(0, 360);
       });
-    } catch (_) {}
-  }
-
-  Future<void> _setArrowDeg(double deg) async {
-    setState(() => _arrowTwoDeg = deg);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble('gallery_arrow2_deg', deg);
     } catch (_) {}
   }
   late final AnimationController _arrowWobble = AnimationController(
@@ -382,8 +377,8 @@ class _StickerGridState extends State<StickerGrid>
               curve: AppMotion.appleEase,
             ),
         const SizedBox(height: 8),
-        // Arrow: tap to swap art with a jelly bounce. Each art keeps
-        // its own angle, tuned with the slider underneath.
+        // Arrow: tap to swap art with a jelly bounce. arrow.png is
+        // locked at 30deg; arrow2 keeps its persisted 130deg.
         Transform.rotate(
           angle: _arrowDeg * math.pi / 180,
           child: GestureDetector(
@@ -402,55 +397,12 @@ class _StickerGridState extends State<StickerGrid>
                 _arrowTwo
                     ? 'assets/arrow2.png'
                     : 'assets/arrow.png',
-                height: 300,
+                height: _arrowHeight,
                 fit: BoxFit.contain,
               ),
             ),
           ),
         ),
-        // Angle slider: arrow2 only. arrow.png is locked at 30deg.
-        if (_arrowTwo)
-          SizedBox(
-            width: 240,
-            child: Row(
-              children: [
-                Text(
-                  '${_arrowDeg.round()}°',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: const Color(0xFFFFD60A),
-                      inactiveTrackColor:
-                          Colors.white.withValues(alpha: 0.15),
-                      thumbColor: const Color(0xFFFFD60A),
-                      overlayColor: const Color(0xFFFFD60A).withValues(
-                        alpha: 0.2,
-                      ),
-                      trackHeight: 3,
-                    ),
-                    child: Slider(
-                      value: _arrowDeg,
-                      min: 0,
-                      max: 360,
-                      divisions: 72,
-                      label: '${_arrowDeg.round()}°',
-                      onChanged: (v) => setState(() => _arrowTwoDeg = v),
-                      onChangeEnd: (v) {
-                        AppHaptics.step();
-                        _setArrowDeg(v);
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
       ],
       ),
     );
