@@ -78,6 +78,27 @@ class _GalleryScreenState extends State<GalleryScreen> {
   bool _shapeBgOn = true;
   int _indicatorShape = 7; // Shapes.arch
 
+  /// Wordmark shadow color index into the personal palette (the
+  /// stickers' own dominant shades). Persisted; advanced per toggle.
+  int _indicatorColorIndex = 0;
+
+  /// Personal palette: distinct dominant shades of the current
+  /// stickers, brand yellow when the gallery is empty.
+  List<int> get _indicatorPalette {
+    final shades = <int>[];
+    for (final s in _stickers) {
+      final c = s.dominantColor;
+      if (c != null && !shades.contains(c)) shades.add(c);
+    }
+    if (shades.isEmpty) shades.add(0xFFFFD60A);
+    return shades;
+  }
+
+  int get _indicatorColor {
+    final palette = _indicatorPalette;
+    return palette[_indicatorColorIndex % palette.length];
+  }
+
   /// Wordmark shadow height multiplier (shape lab). Sticker backdrops
   /// are hardcoded to 1.0 — not user-tunable.
   double _markScale = 1.0;
@@ -296,6 +317,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
       final prefs = await SharedPreferences.getInstance();
       final idx = prefs.getInt('indicator_shape_index');
       if (idx != null) _indicatorShape = idx % kStyleShapes.length;
+      final cidx = prefs.getInt('indicator_color_index');
+      if (cidx != null) _indicatorColorIndex = cidx;
       final mark = prefs.getDouble('wordmark_shadow_scale');
       if (mark != null) _markScale = mark.clamp(0.5, 1.5);
     } catch (_) {}
@@ -354,6 +377,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     setState(() {
       _shapeBgOn = !_shapeBgOn;
       _indicatorShape = (_indicatorShape + 1) % kStyleShapes.length;
+      _indicatorColorIndex++;
     });
     _persistShapeBg();
   }
@@ -388,6 +412,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('indicator_shape_index', _indicatorShape);
+      await prefs.setInt('indicator_color_index', _indicatorColorIndex);
     } catch (_) {}
   }
 
@@ -635,6 +660,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       height: 57 * _markScale,
                       shape: kStyleShapes[_indicatorShape
                           .clamp(0, kStyleShapes.length - 1)],
+                      color: _indicatorColor,
                     ),
                   ),
                   Image.asset(
@@ -708,6 +734,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 controller: _gridController,
                 shapeBg: _shapeBgOn,
                 indicatorShape: _indicatorShape,
+                indicatorColor: _indicatorColor,
                 shapeScale: 1.0,
                 markScale: _markScale,
                 justAddedId: _justAddedId,

@@ -58,6 +58,9 @@ class StickerGrid extends StatefulWidget {
   /// Index into kStyleShapes for the wordmark shadow indicator.
   final int indicatorShape;
 
+  /// ARGB color for the wordmark shadow (user's sticker palette).
+  final int indicatorColor;
+
   /// Wordmark shadow height multiplier (shape lab).
   final double markScale;
 
@@ -75,6 +78,7 @@ class StickerGrid extends StatefulWidget {
     this.controller,
     this.shapeBg = true,
     this.indicatorShape = 7,
+    this.indicatorColor = 0xFFFFD60A,
     this.markScale = 1.0,
     this.shapeScale = 0.7,
     this.justAddedId,
@@ -362,6 +366,7 @@ class _StickerGridState extends State<StickerGrid>
                 height: 90 * widget.markScale,
                 shape: kStyleShapes[widget.indicatorShape
                     .clamp(0, kStyleShapes.length - 1)],
+                color: widget.indicatorColor,
               ),
             ),
             Image.asset(
