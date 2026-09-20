@@ -25,6 +25,7 @@ import '../services/subject_cutout_service.dart';
 import '../services/widget_service.dart';
 import '../widgets/gallery_bottom_sheet.dart';
 import '../widgets/genie_flight.dart';
+import '../widgets/shape_lab_sheet.dart';
 import '../widgets/sticker_grid.dart';
 import '../widgets/wordmark_shadow.dart';
 import 'photo_preview_screen.dart';
@@ -76,6 +77,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
   /// The shadow indicator cycles to the next M3 shape on every toggle.
   bool _shapeBgOn = true;
   int _indicatorShape = 7; // Shapes.arch
+
+  /// Shape-lab sizes (persisted): grid cell backdrops + wordmark shadow.
+  /// Fullscreen scale lives in the detail screen (own storage key).
+  double _shapeScaleGrid = 0.7;
+  double _markScale = 1.0;
 
   /// File path of a trashed sticker awaiting the Undo window, if any.
   String? _trashPath;
@@ -291,7 +297,42 @@ class _GalleryScreenState extends State<GalleryScreen> {
       final prefs = await SharedPreferences.getInstance();
       final idx = prefs.getInt('indicator_shape_index');
       if (idx != null) _indicatorShape = idx % kStyleShapes.length;
+      final grid = prefs.getDouble('shape_scale_grid');
+      if (grid != null) _shapeScaleGrid = grid.clamp(0.3, 1.2);
+      final mark = prefs.getDouble('wordmark_shadow_scale');
+      if (mark != null) _markScale = mark.clamp(0.5, 1.5);
     } catch (_) {}
+  }
+
+  /// Wordmark long-press: shape lab bottom sheet (grid/full/wordmark
+  /// sizes). Grid + wordmark apply live here; fullscreen reads its
+  /// own key when opened.
+  Future<void> _openShapeLab() async {
+    if (!mounted) return;
+    await showShapeLab(
+      context,
+      initial: ShapeLabValues(
+        grid: _shapeScaleGrid,
+        full: (await SharedPreferences.getInstance())
+                .getDouble('shape_scale_full')
+                ?.clamp(0.3, 1.2) ??
+            0.7,
+        mark: _markScale,
+      ),
+      onChanged: (v) async {
+        if (!mounted) return;
+        setState(() {
+          _shapeScaleGrid = v.grid;
+          _markScale = v.mark;
+        });
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setDouble('shape_scale_grid', v.grid);
+          await prefs.setDouble('shape_scale_full', v.full);
+          await prefs.setDouble('wordmark_shadow_scale', v.mark);
+        } catch (_) {}
+      },
+    );
   }
 
   /// Appbar button: straight on/off toggle for the shape backdrop.
@@ -599,6 +640,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
             // same height, narrower, centered — cycling shape each tap.
             GestureDetector(
               onTap: _toggleShapeBg,
+              onLongPress: _openShapeLab,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -606,7 +648,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                     opacity: _shapeBgOn ? 1.0 : 0.0,
                     duration: AppMotion.standard,
                     child: WordmarkShadow(
-                      height: 57,
+                      height: 57 * _markScale,
                       shape: kStyleShapes[_indicatorShape
                           .clamp(0, kStyleShapes.length - 1)],
                     ),
@@ -682,7 +724,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 controller: _gridController,
                 shapeBg: _shapeBgOn,
                 indicatorShape: _indicatorShape,
-                shapeScale: 0.7,
+                shapeScale: _shapeScaleGrid,
+                markScale: _markScale,
                 justAddedId: _justAddedId,
                 onTouchdown: _onTouchdown,
                 jiggling: _jiggling,

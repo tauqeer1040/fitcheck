@@ -58,6 +58,9 @@ class StickerGrid extends StatefulWidget {
   /// Index into kStyleShapes for the wordmark shadow indicator.
   final int indicatorShape;
 
+  /// Wordmark shadow height multiplier (shape lab).
+  final double markScale;
+
   /// Silhouette size relative to the art box (fixed 70%, user-tuned).
   final double shapeScale;
 
@@ -72,6 +75,7 @@ class StickerGrid extends StatefulWidget {
     this.controller,
     this.shapeBg = true,
     this.indicatorShape = 7,
+    this.markScale = 1.0,
     this.shapeScale = 0.7,
     this.justAddedId,
     this.onLanded,
@@ -355,7 +359,7 @@ class _StickerGridState extends State<StickerGrid>
               opacity: widget.shapeBg ? 1.0 : 0.0,
               duration: AppMotion.standard,
               child: WordmarkShadow(
-                height: 90,
+                height: 90 * widget.markScale,
                 shape: kStyleShapes[widget.indicatorShape
                     .clamp(0, kStyleShapes.length - 1)],
               ),

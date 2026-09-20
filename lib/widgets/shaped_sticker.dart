@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_m3shapes/flutter_m3shapes.dart';
@@ -40,6 +41,14 @@ class ShapedSticker extends StatelessWidget {
 
   final BoxFit fit;
 
+  /// When true, the silhouette slowly rotates in place (fullscreen
+  /// viewing delight). Art, drag, and flights are untouched — only the
+  /// shadow turns beneath static art.
+  final bool rotateSilhouette;
+
+  /// Full turn duration for the rotating silhouette.
+  final Duration rotationPeriod;
+
   const ShapedSticker({
     super.key,
     required this.imagePath,
@@ -52,6 +61,8 @@ class ShapedSticker extends StatelessWidget {
     this.openProgress = 1.0,
     this.collapseProgress,
     this.fit = BoxFit.contain,
+    this.rotateSilhouette = false,
+    this.rotationPeriod = const Duration(seconds: 12),
   });
 
   @override
@@ -89,32 +100,15 @@ class ShapedSticker extends StatelessWidget {
           // driver exactly, no overshoot of its own.
           Transform.scale(
             scale: effectiveCardScale,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final bounded = constraints.hasBoundedWidth &&
-                    constraints.hasBoundedHeight;
-                final side = bounded
-                    ? (constraints.maxWidth < constraints.maxHeight
-                            ? constraints.maxWidth
-                            : constraints.maxHeight) *
-                        shapeScale
-                    : 0.0;
-                final card = M3Container(
-                  shape,
-                  color: Color(dominantColor),
-                  child: const SizedBox.expand(),
-                );
-                if (side <= 0) {
-                  return FractionallySizedBox(
-                    widthFactor: shapeScale,
-                    heightFactor: shapeScale,
-                    child: card,
-                  );
-                }
-                return Center(
-                  child: SizedBox(width: side, height: side, child: card),
-                );
-              },
+            child: _SilhouetteBox(
+              shapeScale: shapeScale,
+              rotate: rotateSilhouette,
+              rotationPeriod: rotationPeriod,
+              card: M3Container(
+                shape,
+                color: Color(dominantColor),
+                child: const SizedBox.expand(),
+              ),
             ),
           ),
           Positioned.fill(
@@ -133,6 +127,85 @@ class ShapedSticker extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Square silhouette box: side = tighter dimension × [shapeScale].
+/// Optionally rotates the card in place (fullscreen delight) — the
+/// rotation wraps the whole card including its centering, so layout
+/// never shifts while it turns.
+class _SilhouetteBox extends StatefulWidget {
+  final double shapeScale;
+  final bool rotate;
+  final Duration rotationPeriod;
+  final Widget card;
+
+  const _SilhouetteBox({
+    required this.shapeScale,
+    required this.rotate,
+    required this.rotationPeriod,
+    required this.card,
+  });
+
+  @override
+  State<_SilhouetteBox> createState() => _SilhouetteBoxState();
+}
+
+class _SilhouetteBoxState extends State<_SilhouetteBox>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _rotation;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.rotate) {
+      _rotation = AnimationController(
+        duration: widget.rotationPeriod,
+        vsync: this,
+      )..repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _rotation?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bounded = constraints.hasBoundedWidth &&
+            constraints.hasBoundedHeight;
+        final side = bounded
+            ? (constraints.maxWidth < constraints.maxHeight
+                    ? constraints.maxWidth
+                    : constraints.maxHeight) *
+                widget.shapeScale
+            : 0.0;
+        final box = side <= 0
+            ? FractionallySizedBox(
+                widthFactor: widget.shapeScale,
+                heightFactor: widget.shapeScale,
+                child: widget.card,
+              )
+            : Center(
+                child:
+                    SizedBox(width: side, height: side, child: widget.card),
+              );
+        final rotation = _rotation;
+        if (rotation == null) return box;
+        return AnimatedBuilder(
+          animation: rotation,
+          builder: (context, child) => Transform.rotate(
+            angle: rotation.value * math.pi * 2,
+            child: child,
+          ),
+          child: box,
+        );
+      },
     );
   }
 }
