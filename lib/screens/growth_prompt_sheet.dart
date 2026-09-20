@@ -205,7 +205,7 @@ class _GrowthCard extends StatefulWidget {
 }
 
 class _GrowthCardState extends State<_GrowthCard>
-    with AutomaticKeepAlivesClientMixin {
+    with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
 
@@ -222,6 +222,7 @@ class _GrowthCardState extends State<_GrowthCard>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
