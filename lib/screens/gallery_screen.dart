@@ -6,7 +6,6 @@ import 'dart:ui';
 
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,6 +26,7 @@ import '../services/widget_service.dart';
 import '../widgets/gallery_bottom_sheet.dart';
 import '../widgets/genie_flight.dart';
 import '../widgets/sticker_grid.dart';
+import '../widgets/wordmark_shadow.dart';
 import 'photo_preview_screen.dart';
 import 'growth_prompt_sheet.dart';
 import 'shape_demo_sheet.dart';
@@ -605,13 +605,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
                   AnimatedOpacity(
                     opacity: _shapeBgOn ? 1.0 : 0.0,
                     duration: AppMotion.standard,
-                    child: M3Container(
-                      kStyleShapes[_indicatorShape
-                          .clamp(0, kStyleShapes.length - 1)],
-                      width: 36,
+                    child: WordmarkShadow(
                       height: 57,
-                      color: Colors.black.withValues(alpha: 0.45),
-                      child: const SizedBox.expand(),
+                      shape: kStyleShapes[_indicatorShape
+                          .clamp(0, kStyleShapes.length - 1)],
                     ),
                   ),
                   Image.asset(

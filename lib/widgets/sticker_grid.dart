@@ -5,7 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_m3shapes/flutter_m3shapes.dart';
+import './wordmark_shadow.dart';
 import '../models/outfit_sticker.dart';
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
@@ -354,13 +354,10 @@ class _StickerGridState extends State<StickerGrid>
             AnimatedOpacity(
               opacity: widget.shapeBg ? 1.0 : 0.0,
               duration: AppMotion.standard,
-              child: M3Container(
-                kStyleShapes[widget.indicatorShape
-                    .clamp(0, kStyleShapes.length - 1)],
-                width: 56,
+              child: WordmarkShadow(
                 height: 90,
-                color: Colors.black.withValues(alpha: 0.45),
-                child: const SizedBox.expand(),
+                shape: kStyleShapes[widget.indicatorShape
+                    .clamp(0, kStyleShapes.length - 1)],
               ),
             ),
             Image.asset(

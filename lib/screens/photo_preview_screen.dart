@@ -52,8 +52,8 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   Offset _dragOffset = Offset.zero;
 
   /// Where the subject lived inside the source photo, 0–1 normalized
-  /// (from the cutout service's mask bbox). The cutout floats at this
-  /// origin on first reveal instead of dead-center.
+  /// (from the cutout service's mask bbox). Used for the background
+  /// card's subject-anchored melt; the cutout itself sits dead-center.
   Offset _subjectAnchor = const Offset(0.5, 0.5);
 
   /// Decoded source-photo dimensions, for cover-crop math.
@@ -337,11 +337,10 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
 
   Offset _getStickerOffset() => _dragOffset;
 
-  /// Screen-space origin for the floating cutout: its TRUE position in
-  /// the photo (subject anchor mapped through the cover-crop rect of
-  /// the background card), minus half the display size so the Position
-  /// stays top-left based. Falls back to center (0.5, 0.5) while the
-  /// analysis hasn't landed.
+  /// Screen-space origin for the floating cutout: dead center of the
+  /// viewport (minus half the display size for top-left positioning).
+  /// The cutout no longer preserves its photo-relative position —
+  /// as soon as it's made it sits centered, ready to drag.
   /// Subject's center within the RESTING background card's coordinates
   /// (photo anchor mapped through the card's BoxFit.cover crop).
   Offset _subjectInCard(Size size) {
@@ -361,11 +360,8 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   }
 
   Offset _floatOrigin(Size size, double displayW, double displayH) {
-    final bgW = size.width * 0.72;
-    final bgH = size.height * 0.5;
-    final p = _subjectInCard(size);
-    final left = (size.width - bgW) / 2 + p.dx - displayW / 2;
-    final top = (size.height - bgH) / 2 + p.dy - displayH / 2;
+    final left = (size.width - displayW) / 2;
+    final top = (size.height - displayH) / 2;
     // Clamp fully on-screen with a small margin, per the edge-case spec.
     final clampedLeft = left
         .clamp(12.0, math.max(12.0, size.width - displayW - 12));
@@ -428,7 +424,10 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                   width: w,
                   height: h,
                   child: MorphingShapeClip(
-                    endScale: 0.55,
+                    // Shrink fully to invisible: the morph must leave no
+                    // static trail behind as the cutout takes over.
+                    endScale: 0.0,
+                    shrinkDuration: const Duration(milliseconds: 2500),
                     child: Opacity(
                       opacity: (1.0 - tFade).clamp(0.0, 1.0),
                       child: Image.file(
@@ -583,9 +582,8 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
             ),
 
           // Cutout image — the Hero source: on save it flies straight
-          // into the matching grid cell. Floats at its TRUE origin in
-          // the photo on first reveal (not auto-centered); drag offset
-          // applies on top afterwards.
+          // into the matching grid cell. Sits dead-center from the
+          // moment it's made; drag offset applies on top afterwards.
           if (_isCutoutVisible)
             Builder(builder: (context) {
               final origin =
