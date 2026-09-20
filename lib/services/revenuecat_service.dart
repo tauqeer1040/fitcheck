@@ -24,9 +24,11 @@ class RevenueCatService {
   /// Entitlement created in the RevenueCat dashboard.
   static const String entitlementId = 'StickerPants Pro';
 
-  // Test-store SDK key (public by design — safe to embed, but only
-  // for dev builds; production uses the `goog_…` key via dart-define).
-  static const String _defaultApiKey = 'test_MzSOYTAJigjHQzYSwxmUuXIgPmY';
+  // Production Google Play SDK key (public by design — safe to embed).
+  // StickerPants project (proj44611bfa), StickerPants Android app.
+  // Override with --dart-define=REVENUECAT_API_KEY=<test key> for
+  // Test Store runs.
+  static const String _defaultApiKey = 'goog_UcttPKNTtNqMWYzGpeNfMxjtxuw';
 
   final Set<CustomerInfoUpdateListener> _listeners = {};
 
@@ -158,7 +160,12 @@ class RevenueCatService {
     try {
       await ensureInitialized();
       final offerings = await Purchases.getOfferings();
-      return offerings.current?.availablePackages ?? const [];
+      final pkgs = offerings.current?.availablePackages ?? const [];
+      if (kDebugMode) {
+        debugPrint('[RevenueCat] offering=${offerings.current?.identifier} '
+            'packages=${pkgs.map((p) => '${p.identifier}:${p.storeProduct.priceString}').join(',')}');
+      }
+      return pkgs;
     } catch (_) {
       return const [];
     }
