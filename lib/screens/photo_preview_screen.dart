@@ -407,13 +407,19 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     final shaped = Stack(
       alignment: Alignment.center,
       children: [
-        // Solid silhouette beneath, fading in as the photo absorbs.
-        M3Container(
-          kStyleShapes[_shapeIndex],
-          width: w,
-          height: h,
-          color: Color(c).withValues(alpha: tFade.clamp(0.0, 1.0)),
-          child: const SizedBox.expand(),
+        // Solid silhouette beneath, fading in as the photo absorbs —
+        // then melting away the moment the cutout exists, so only ONE
+        // shape remains: the cutout's own, which moves with the drag.
+        AnimatedOpacity(
+          opacity: _isCutoutVisible ? 0.0 : 1.0,
+          duration: const Duration(milliseconds: 250),
+          child: M3Container(
+            kStyleShapes[_shapeIndex],
+            width: w,
+            height: h,
+            color: Color(c).withValues(alpha: tFade.clamp(0.0, 1.0)),
+            child: const SizedBox.expand(),
+          ),
         ),
         Positioned.fill(
           // While processing, the photo breathes inside a morphing M3
@@ -424,10 +430,10 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                   width: w,
                   height: h,
                   child: MorphingShapeClip(
-                    // Shrink fully to invisible: the morph must leave no
-                    // static trail behind as the cutout takes over.
-                    endScale: 0.0,
-                    shrinkDuration: const Duration(milliseconds: 2500),
+                    // Gentle convergence toward the cutout size; the
+                    // rotation stays visible throughout processing.
+                    endScale: 0.55,
+                    shrinkDuration: const Duration(seconds: 4),
                     child: Opacity(
                       opacity: (1.0 - tFade).clamp(0.0, 1.0),
                       child: Image.file(
