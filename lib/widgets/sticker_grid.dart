@@ -25,11 +25,11 @@ class StickerGrid extends StatefulWidget {
   /// Scroll controller owned by the parent (used to reveal row 0 landing).
   final ScrollController? controller;
 
-  /// Id of the sticker flying home: its cell hosts the Hero destination
-  /// and plays the landing pop. Null for everyone else.
+  /// Id of the sticker flying home: its cell hosts the Hero destination.
+  /// Null for everyone else.
   final String? justAddedId;
 
-  /// Fired after the landing pop finishes so the parent can clear the tag.
+  /// Fired after landing so the parent can clear the tag.
   final VoidCallback? onLanded;
 
   /// Fired at touchdown with the landing cell's global center, so the
@@ -55,6 +55,10 @@ class StickerGrid extends StatefulWidget {
   /// Solid M3 shape backdrop behind cells. Off = bare cutout art.
   final bool shapeBg;
 
+  /// Fired when the empty-state wordmark is tapped (same shape-bg
+  /// toggle as the appbar wordmark).
+  final VoidCallback? onToggleShapeBg;
+
   /// Index into kStyleShapes for the wordmark shadow indicator.
   final int indicatorShape;
 
@@ -78,6 +82,7 @@ class StickerGrid extends StatefulWidget {
     this.controller,
     this.shapeBg = true,
     this.indicatorShape = 7,
+    this.onToggleShapeBg,
     this.indicatorColor = 0xFFFFD60A,
     this.markScale = 1.0,
     this.shapeScale = 0.7,
@@ -143,6 +148,12 @@ class _StickerGridState extends State<StickerGrid>
     vsync: this,
     duration: const Duration(milliseconds: 600),
   );
+
+  /// Slow hover for the empty-state wordmark: gentle ±6px float.
+  late final AnimationController _hover = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 3),
+  )..repeat(reverse: true);
 
   void _bounceArrow() {
     AppHaptics.tap();
@@ -212,6 +223,7 @@ class _StickerGridState extends State<StickerGrid>
   @override
   void dispose() {
     _arrowWobble.dispose();
+    _hover.dispose();
     _jiggle.dispose();
     _settle.dispose();
     super.dispose();
@@ -241,6 +253,7 @@ class _StickerGridState extends State<StickerGrid>
       _startSpan = _columns.toDouble();
       _pinchStart = _span();
       _settle.stop();
+      AppHaptics.mode();
       setState(() {
         _liveScale = 1.0;
         _liveFocal = _toLocal(_focal());
@@ -264,7 +277,7 @@ class _StickerGridState extends State<StickerGrid>
       _liveFocal = _toLocal(_focal());
       if (next != _columns) {
         _columns = next;
-        AppHaptics.step();
+        AppHaptics.launch();
       }
     });
   }
@@ -278,6 +291,8 @@ class _StickerGridState extends State<StickerGrid>
         setState(() {});
         return;
       }
+      // Zoom committed: heavy thunk as the grid snaps to its columns.
+      AppHaptics.milestone();
       // M3 Expressive settle: spring home with a whisper of overshoot.
       _settle.animateWith(
         SpringSimulation(AppMotion.tapSpring, _liveScale, 1.0, 0),
@@ -355,26 +370,44 @@ class _StickerGridState extends State<StickerGrid>
         const SizedBox(height: 8),
         // Wordmark with the shape-toggle shadow indicator behind it:
         // same height as the image, narrower, centered. Hidden when
-        // the cell backdrops are off.
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            AnimatedOpacity(
-              opacity: widget.shapeBg ? 1.0 : 0.0,
-              duration: AppMotion.standard,
-              child: WordmarkShadow(
-                height: 90 * widget.markScale,
-                shape: kStyleShapes[widget.indicatorShape
-                    .clamp(0, kStyleShapes.length - 1)],
-                color: widget.indicatorColor,
-              ),
+        // the cell backdrops are off. Taps toggle like the appbar
+        // wordmark; the whole lockup hovers slowly.
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            AppHaptics.tap();
+            widget.onToggleShapeBg?.call();
+          },
+          child: AnimatedBuilder(
+            animation: _hover,
+            builder: (context, child) {
+              final dy = math.sin(_hover.value * math.pi * 2) * 6.0;
+              return Transform.translate(
+                offset: Offset(0, dy),
+                child: child,
+              );
+            },
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedOpacity(
+                  opacity: widget.shapeBg ? 1.0 : 0.0,
+                  duration: AppMotion.standard,
+                  child: WordmarkShadow(
+                    height: 90 * widget.markScale,
+                    shape: kStyleShapes[widget.indicatorShape
+                        .clamp(0, kStyleShapes.length - 1)],
+                    color: widget.indicatorColor,
+                  ),
+                ),
+                Image.asset(
+                  'assets/stickerpants.png',
+                  width: 180,
+                  fit: BoxFit.contain,
+                ),
+              ],
             ),
-            Image.asset(
-              'assets/stickerpants.png',
-              width: 180,
-              fit: BoxFit.contain,
-            ),
-          ],
+          ),
         ),
         const SizedBox(height: 8),
         Text(
@@ -490,7 +523,8 @@ class _StickerGridState extends State<StickerGrid>
                 child: cell,
               );
             }
-            // Fresh-save landing: full celebration (pop + tick + confetti).
+            // Fresh-save landing: tick + confetti, no extra bounce —
+            // the sticker lands exactly as the flight delivers it.
             if (sticker.id == widget.justAddedId) {
               return _LandingPop(
                 key: ValueKey('land-${sticker.id}'),
@@ -685,8 +719,10 @@ class _JiggleTick extends StatelessWidget {
   }
 }
 
-/// Landing impact: sits at scale 1 while the Hero flight is inbound, then
-/// (timed to touchdown) plays a squash-and-spring pop with a haptic tick.
+/// Landing tick: sits at scale 1 while the Hero flight is inbound, then
+/// (timed to touchdown) plays the haptic tick and reports the landing
+/// spot for confetti. No extra bounce — the sticker lands exactly as
+/// the preview flight delivers it.
 class _LandingPop extends StatefulWidget {
   final Widget child;
   final VoidCallback? onDone;
@@ -703,20 +739,11 @@ class _LandingPop extends StatefulWidget {
   State<_LandingPop> createState() => _LandingPopState();
 }
 
-class _LandingPopState extends State<_LandingPop>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pop = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 315),
-  );
-
+class _LandingPopState extends State<_LandingPop> {
   @override
   void initState() {
     super.initState();
-    _pop.addStatusListener((status) {
-      if (status == AnimationStatus.completed) widget.onDone?.call();
-    });
-    // The flight takes kGenieFlight; pop exactly as it lands.
+    // The flight takes kGenieFlight; tick exactly as it lands.
     Future.delayed(kGenieFlight, () {
       if (!mounted) return;
       AppHaptics.land();
@@ -727,28 +754,10 @@ class _LandingPopState extends State<_LandingPop>
           box.localToGlobal(box.size.center(Offset.zero)),
         );
       }
-      _pop.forward(from: 0.0);
+      widget.onDone?.call();
     });
   }
 
   @override
-  void dispose() {
-    _pop.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _pop,
-      builder: (context, child) {
-        // 1.0 while waiting, squash to 0.55 on impact, elastic back to 1.
-        final scale = _pop.isDismissed
-            ? 1.0
-            : 0.55 + 0.45 * Curves.elasticOut.transform(_pop.value);
-        return Transform.scale(scale: scale, child: child);
-      },
-      child: widget.child,
-    );
-  }
+  Widget build(BuildContext context) => widget.child;
 }

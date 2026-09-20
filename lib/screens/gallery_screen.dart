@@ -734,6 +734,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 controller: _gridController,
                 shapeBg: _shapeBgOn,
                 indicatorShape: _indicatorShape,
+                onToggleShapeBg: _toggleShapeBg,
                 indicatorColor: _indicatorColor,
                 shapeScale: 1.0,
                 markScale: _markScale,

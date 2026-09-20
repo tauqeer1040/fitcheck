@@ -14,6 +14,11 @@ import 'package:material_new_shapes/material_new_shapes.dart';
 class MorphingShapeClip extends StatefulWidget {
   final Widget child;
 
+  /// When true, the whole clipped output rotates (image turns WITH
+  /// the shape). When false (default), rotation goes into the
+  /// outline's startAngle — the shape turns around a static image.
+  final bool rotateImage;
+
   /// Scale the whole clip converges to while it runs (1.0 = endless,
   /// no shrink — demo mode). Preview passes ~0.55 so the morphing
   /// photo visibly shrinks toward the emerging cutout size.
@@ -25,6 +30,7 @@ class MorphingShapeClip extends StatefulWidget {
   const MorphingShapeClip({
     super.key,
     required this.child,
+    this.rotateImage = false,
     this.endScale = 1.0,
     this.shrinkDuration = const Duration(seconds: 4),
   });
@@ -125,18 +131,26 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
                   Curves.easeOut.transform(
                     _shrinkController.value.clamp(0.0, 1.0),
                   );
-          // Whole clipped output rotates: image turns WITH the shape.
+          // Image-rotate mode: whole clipped output turns together.
+          // Default: only the outline phase-turns under a static image.
+          final clip = ClipPath(
+            clipper: _MorphClipper(
+              _morphSequence[_morphIndex],
+              _morphController.value.clamp(0.0, 1.0),
+              outlineDeg: widget.rotateImage
+                  ? 0.0
+                  : _rotationController.value * 360.0,
+            ),
+            child: child,
+          );
+          if (!widget.rotateImage) {
+            return Transform.scale(scale: shrink, child: clip);
+          }
           return Transform.scale(
             scale: shrink,
             child: Transform.rotate(
               angle: _rotationController.value * math.pi * 2,
-              child: ClipPath(
-                clipper: _MorphClipper(
-                  _morphSequence[_morphIndex],
-                  _morphController.value.clamp(0.0, 1.0),
-                ),
-                child: child,
-              ),
+              child: clip,
             ),
           );
         },
@@ -149,13 +163,18 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
 class _MorphClipper extends CustomClipper<Path> {
   final Morph morph;
   final double progress;
+  final double outlineDeg;
 
-  _MorphClipper(this.morph, this.progress);
+  _MorphClipper(this.morph, this.progress, {this.outlineDeg = 0.0});
 
   @override
   Path getClip(Size size) {
-    // Unit-space morph path scaled to the widget box.
-    final path = morph.toPath(progress: progress);
+    // Unit-space morph path (outline optionally phase-turned),
+    // scaled to the widget box.
+    final path = morph.toPath(
+      progress: progress,
+      startAngle: outlineDeg.round() % 360,
+    );
     final scaled = path.transform(
       Matrix4.diagonal3Values(size.width, size.height, 1).storage,
     );

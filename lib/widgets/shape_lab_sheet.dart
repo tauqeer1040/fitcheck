@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../motion/app_haptics.dart';
 
@@ -34,11 +35,31 @@ class _ShapeLabSheet extends StatefulWidget {
 
 class _ShapeLabSheetState extends State<_ShapeLabSheet> {
   late double _v;
+  bool _rotateImage = false;
 
   @override
   void initState() {
     super.initState();
     _v = widget.initial;
+    _loadRotate();
+  }
+
+  Future<void> _loadRotate() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _rotateImage = prefs.getBool('morph_rotate_image') ?? false;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _setRotate(bool v) async {
+    setState(() => _rotateImage = v);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('morph_rotate_image', v);
+    } catch (_) {}
   }
 
   @override
@@ -104,6 +125,34 @@ class _ShapeLabSheetState extends State<_ShapeLabSheet> {
               },
               onChangeEnd: (_) => AppHaptics.step(),
             ),
+          ),
+          const SizedBox(height: 8),
+          // Rotate-image toggle: when on, the photo turns WITH the
+          // morphing outline; when off, only the outline turns.
+          // Applies to the next cutout.
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Rotate image with shape',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            subtitle: Text(
+              'Applies to next cutout',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 12,
+              ),
+            ),
+            activeColor: const Color(0xFFFFD60A),
+            value: _rotateImage,
+            onChanged: (v) {
+              AppHaptics.step();
+              _setRotate(v);
+            },
           ),
         ],
       ),

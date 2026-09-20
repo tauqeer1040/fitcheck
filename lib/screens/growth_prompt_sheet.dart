@@ -76,17 +76,34 @@ class _GrowthSheet extends StatefulWidget {
   State<_GrowthSheet> createState() => _GrowthSheetState();
 }
 
-class _GrowthSheetState extends State<_GrowthSheet> {
-  /// Review flow: "Enjoying StickerPants?" gate first — Play never
-  /// reports the rating back, so the inline star picker is the only way
-  /// to learn it. 4-5 stars fires the store flow + stops prompts for
-  /// good; 1-3 suppresses for 30 days; No dismisses.
-  bool _askingEnjoy = false;
-  bool _askingStars = false;
-  bool _busy = false;
+/// Carousel order: review first (the sheet's headline act), then
+/// share, widgets, reminders. The triggering action is the landing
+/// page; users can swipe through every suggestion from one sheet.
+const _carouselOrder = [
+  GrowthAction.review,
+  GrowthAction.share,
+  GrowthAction.widgets,
+  GrowthAction.reminders,
+];
 
-  bool get _isReview => widget.action == GrowthAction.review;
-  bool get _isReminders => widget.action == GrowthAction.reminders;
+class _GrowthSheetState extends State<_GrowthSheet> {
+  late final PageController _pages;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = _carouselOrder
+        .indexOf(widget.action)
+        .clamp(0, _carouselOrder.length - 1);
+    _pages = PageController(initialPage: _index);
+  }
+
+  @override
+  void dispose() {
+    _pages.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,7 +121,111 @@ class _GrowthSheetState extends State<_GrowthSheet> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 380,
+              child: PageView.builder(
+                controller: _pages,
+                itemCount: _carouselOrder.length,
+                onPageChanged: (i) {
+                  AppHaptics.step();
+                  setState(() => _index = i);
+                },
+                itemBuilder: (context, i) =>
+                    _GrowthCard(action: _carouselOrder[i]),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (int i = 0; i < _carouselOrder.length; i++)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: i == _index ? 18 : 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: i == _index
+                          ? const Color(0xFFFFD60A)
+                          : Colors.white.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: const Text(
+                'Maybe later',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () async {
+                await GrowthService.snooze(days: 7);
+                if (context.mounted) Navigator.of(context).pop();
+              },
+              child: Text(
+                "Don't remind me for 7 days",
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One suggestion card in the carousel. Owns its review-gate state so
+/// each card behaves identically whether landed on or swiped to.
+class _GrowthCard extends StatefulWidget {
+  final GrowthAction action;
+  const _GrowthCard({required this.action});
+
+  @override
+  State<_GrowthCard> createState() => _GrowthCardState();
+}
+
+class _GrowthCardState extends State<_GrowthCard>
+    with AutomaticKeepAlivesClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  /// Review flow: "Enjoying StickerPants?" gate first — Play never
+  /// reports the rating back, so the inline star picker is the only way
+  /// to learn it. 4-5 stars fires the store flow + stops prompts for
+  /// good; 1-3 suppresses for 30 days; No dismisses.
+  bool _askingEnjoy = false;
+  bool _askingStars = false;
+  bool _busy = false;
+
+  bool get _isReview => widget.action == GrowthAction.review;
+  bool get _isReminders => widget.action == GrowthAction.reminders;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
             Text(
               _isReview
                   ? 'Loving StickerPants?'
@@ -210,42 +331,16 @@ class _GrowthSheetState extends State<_GrowthSheet> {
                     },
               ),
             const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.white.withValues(alpha: 0.08),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-              child: const Text(
-                'Maybe later',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () async {
-                await GrowthService.snooze(days: 7);
-                if (context.mounted) Navigator.of(context).pop();
-              },
-              child: Text(
-                "Don't remind me for 7 days",
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.white.withValues(alpha: 0.5),
-                ),
+            // Dismiss + snooze live once at sheet level, below the dots.
+            Text(
+              'Swipe for more ways to support StickerPants',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withValues(alpha: 0.4),
               ),
             ),
           ],
-        ),
-      ),
-    );
+        );
   }
 
   Future<void> _onStarsRated(int stars) async {
