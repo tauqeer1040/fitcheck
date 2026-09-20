@@ -95,7 +95,6 @@ flutter:
     - assets/splash/
     - assets/logo3.png
     - assets/stickerpants.png
-    - assets/arrow.png
     - assets/arrow2.png
     - assets/models/
   # assets:

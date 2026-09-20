@@ -5,7 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 import '../models/outfit_sticker.dart';
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
@@ -55,6 +55,9 @@ class StickerGrid extends StatefulWidget {
   /// Solid M3 shape backdrop behind cells. Off = bare cutout art.
   final bool shapeBg;
 
+  /// Index into kStyleShapes for the wordmark shadow indicator.
+  final int indicatorShape;
+
   /// Silhouette size relative to the art box (fixed 70%, user-tuned).
   final double shapeScale;
 
@@ -68,6 +71,7 @@ class StickerGrid extends StatefulWidget {
     required this.onTap,
     this.controller,
     this.shapeBg = true,
+    this.indicatorShape = 7,
     this.shapeScale = 0.7,
     this.justAddedId,
     this.onLanded,
@@ -122,37 +126,18 @@ class _StickerGridState extends State<StickerGrid>
     setState(() => _lineIndex = (_lineIndex + 1) % _pickLines.length);
   }
 
-  /// Arrow angles: arrow.png is LOCKED at 30deg; arrow2 keeps its
-  /// adjustable 130deg keeper (persisted, no slider UI).
-  /// Display heights differ per art: arrow.png renders at half height.
-  static const double _arrowOneLockedDeg = 30;
-  static const double _arrowTwoDefault = 130;
-  static const double _arrowOneHeight = 150;
-  static const double _arrowTwoHeight = 300;
-  double _arrowTwoDeg = _arrowTwoDefault;
-  bool _arrowTwo = true;
+  /// Arrow: single art (arrow2) at a fixed 130deg. Tap plays the
+  /// jelly wobble + haptic. No swapping, no slider.
+  static const double _arrowDeg = 130;
+  static const double _arrowHeight = 240;
 
-  double get _arrowDeg => _arrowTwo ? _arrowTwoDeg : _arrowOneLockedDeg;
-  double get _arrowHeight => _arrowTwo ? _arrowTwoHeight : _arrowOneHeight;
-
-  Future<void> _loadArrowAngles() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final two = prefs.getDouble('gallery_arrow2_deg');
-      if (!mounted) return;
-      setState(() {
-        if (two != null) _arrowTwoDeg = two.clamp(0, 360);
-      });
-    } catch (_) {}
-  }
   late final AnimationController _arrowWobble = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 600),
   );
 
-  void _swapArrow() {
+  void _bounceArrow() {
     AppHaptics.tap();
-    setState(() => _arrowTwo = !_arrowTwo);
     _arrowWobble.forward(from: 0);
   }
 
@@ -191,7 +176,6 @@ class _StickerGridState extends State<StickerGrid>
   @override
   void initState() {
     super.initState();
-    _loadArrowAngles();
     _settle.addListener(() {
       if (mounted) setState(() => _liveScale = _settle.value);
     });
@@ -361,10 +345,30 @@ class _StickerGridState extends State<StickerGrid>
           fit: BoxFit.contain,
         ),
         const SizedBox(height: 8),
-        Image.asset(
-          'assets/stickerpants.png',
-          width: 180,
-          fit: BoxFit.contain,
+        // Wordmark with the shape-toggle shadow indicator behind it:
+        // same height as the image, narrower, centered. Hidden when
+        // the cell backdrops are off.
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            AnimatedOpacity(
+              opacity: widget.shapeBg ? 1.0 : 0.0,
+              duration: AppMotion.standard,
+              child: M3Container(
+                kStyleShapes[widget.indicatorShape
+                    .clamp(0, kStyleShapes.length - 1)],
+                width: 56,
+                height: 90,
+                color: Colors.black.withValues(alpha: 0.45),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Image.asset(
+              'assets/stickerpants.png',
+              width: 180,
+              fit: BoxFit.contain,
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         Text(
@@ -377,13 +381,12 @@ class _StickerGridState extends State<StickerGrid>
               curve: AppMotion.appleEase,
             ),
         const SizedBox(height: 8),
-        // Arrow: tap to swap art with a jelly bounce. arrow.png is
-        // locked at 30deg; arrow2 keeps its persisted 130deg.
+        // Arrow: tap plays the jelly bounce + haptic. Fixed art/angle.
         Transform.rotate(
           angle: _arrowDeg * math.pi / 180,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _swapArrow,
+            onTap: _bounceArrow,
             child: AnimatedBuilder(
               animation: _arrowWobble,
               builder: (context, child) {
@@ -394,9 +397,7 @@ class _StickerGridState extends State<StickerGrid>
                 return Transform.scale(scale: s, child: child);
               },
               child: Image.asset(
-                _arrowTwo
-                    ? 'assets/arrow2.png'
-                    : 'assets/arrow.png',
+                'assets/arrow2.png',
                 height: _arrowHeight,
                 fit: BoxFit.contain,
               ),

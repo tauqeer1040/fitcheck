@@ -6,6 +6,7 @@ import 'dart:ui';
 
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -69,9 +70,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
   /// Delete mode: stickers shake with × badges.
   bool _jiggling = false;
 
-  /// Solid M3 shape backdrop behind small grid stickers. Toggleable from
-  /// the appbar; persisted next to stickers.json.
+  /// Solid M3 shape backdrop behind small grid stickers. Toggleable
+  /// from the appbar wordmark; persisted next to stickers.json.
+  /// The shadow indicator cycles to the next M3 shape on every toggle.
   bool _shapeBgOn = true;
+  int _indicatorShape = 7; // Shapes.arch
 
   /// File path of a trashed sticker awaiting the Undo window, if any.
   String? _trashPath;
@@ -283,6 +286,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
     } catch (_) {
       // Missing or unreadable flag: keep the default (on).
     }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final idx = prefs.getInt('indicator_shape_index');
+      if (idx != null) _indicatorShape = idx % kStyleShapes.length;
+    } catch (_) {}
   }
 
   /// Appbar button: straight on/off toggle for the shape backdrop.
@@ -317,7 +325,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   void _toggleShapeBg() {
     AppHaptics.tap();
-    setState(() => _shapeBgOn = !_shapeBgOn);
+    setState(() {
+      _shapeBgOn = !_shapeBgOn;
+      _indicatorShape = (_indicatorShape + 1) % kStyleShapes.length;
+    });
     _persistShapeBg();
   }
 
@@ -348,6 +359,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
     } catch (_) {
       // Toggle still applies for this session if the write fails.
     }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('indicator_shape_index', _indicatorShape);
+    } catch (_) {}
   }
 
 
@@ -578,11 +593,33 @@ class _GalleryScreenState extends State<GalleryScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            // StickerPants wordmark image (2:1).
-            Image.asset(
-              'assets/stickerpants.png',
-              height: 57,
-              fit: BoxFit.contain,
+            // StickerPants wordmark (2:1): tap toggles the M3 cell
+            // backdrops. The shadow indicator behind it shows state —
+            // same height, narrower, centered — cycling shape each tap.
+            GestureDetector(
+              onTap: _toggleShapeBg,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  AnimatedOpacity(
+                    opacity: _shapeBgOn ? 1.0 : 0.0,
+                    duration: AppMotion.standard,
+                    child: M3Container(
+                      kStyleShapes[_indicatorShape
+                          .clamp(0, kStyleShapes.length - 1)],
+                      width: 36,
+                      height: 57,
+                      color: Colors.black.withValues(alpha: 0.45),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                  Image.asset(
+                    'assets/stickerpants.png',
+                    height: 57,
+                    fit: BoxFit.contain,
+                  ),
+                ],
+              ),
             ),
           ],
         ),        actions: [
@@ -605,15 +642,6 @@ class _GalleryScreenState extends State<GalleryScreen> {
             icon: const Icon(
               Icons.workspace_premium_outlined,
               color: NotesColors.yellow,
-            ),
-          ),
-          // Solid shape-backdrop toggle for grid stickers.
-          IconButton(
-            tooltip: 'Background shape',
-            onPressed: _toggleShapeBg,
-            icon: Icon(
-              _shapeBgOn ? Icons.auto_awesome : Icons.image_outlined,
-              color: _shapeBgOn ? NotesColors.yellow : NotesColors.text,
             ),
           ),
           // iOS-style Done exits delete mode.
@@ -646,6 +674,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 onTap: _openDetail,
                 controller: _gridController,
                 shapeBg: _shapeBgOn,
+                indicatorShape: _indicatorShape,
                 shapeScale: 0.7,
                 justAddedId: _justAddedId,
                 onTouchdown: _onTouchdown,
