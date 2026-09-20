@@ -3,7 +3,6 @@ package com.taucity.stickerpants
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.SharedPreferences
-import android.graphics.BitmapFactory
 import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetProvider
@@ -39,8 +38,11 @@ class RecentStickersWidgetProvider : HomeWidgetProvider() {
                 )
                 ids.forEachIndexed { index, viewId ->
                     val path = widgetData.getString("sticker_$index", null)
+                    val shape = widgetData.getString(
+                        "sticker_${index}_shape", "clamshell",
+                    ) ?: "clamshell"
                     val bmp = path?.takeIf { it.isNotEmpty() }
-                        ?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+                        ?.let { WidgetBitmaps.decodeCard(context, it, shape) }
                     if (bmp != null) {
                         setViewVisibility(viewId, android.view.View.VISIBLE)
                         setImageViewBitmap(viewId, bmp)

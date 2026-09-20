@@ -44,6 +44,10 @@ class RevenueCatService {
   /// custom screen instead of erroring through the method channel.
   bool _authValid = true;
 
+  /// Short human-readable reason for the last purchase failure,
+  /// surfaced on the paywall so dead taps are diagnosable on-device.
+  String? lastPurchaseError;
+
   void addListener(CustomerInfoUpdateListener listener) {
     _listeners.add(listener);
     final info = _cachedCustomerInfo;
@@ -139,7 +143,8 @@ class RevenueCatService {
         }
       }
       return active;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[RevenueCat] purchase failed: $e');
       return false;
     }
   }
@@ -166,7 +171,8 @@ class RevenueCatService {
             'packages=${pkgs.map((p) => '${p.identifier}:${p.storeProduct.priceString}').join(',')}');
       }
       return pkgs;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[RevenueCat] getOfferings failed: $e');
       return const [];
     }
   }

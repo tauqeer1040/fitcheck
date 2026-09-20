@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:photo_manager/photo_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../motion/app_haptics.dart';
@@ -59,6 +60,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // The onboarding's last act is the product itself: the gallery's
     // empty state is the "first flick" stage (ghost card + coach mark).
     // Celebration + paywall hang off the first sticker save.
+    //
+    // Photo permission fires here, back-to-back after notifications —
+    // no custom pre-dialog. Denials are handled later at the gallery
+    // sheet (rationale + Settings deep-link).
+    try {
+      await PhotoManager.requestPermissionExtend();
+    } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('onboarding_completed_v1', true);
     AnalyticsService.instance.logOnboardingCompleted(

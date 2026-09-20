@@ -3,7 +3,6 @@ package com.taucity.stickerpants
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.SharedPreferences
-import android.graphics.BitmapFactory
 import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetProvider
@@ -32,8 +31,10 @@ class LatestStickerWidgetProvider : HomeWidgetProvider() {
                 setOnClickPendingIntent(R.id.widget_container, launch)
 
                 val path = widgetData.getString("sticker_0", null)
+                val shape = widgetData.getString("latest_shape", "arch")
+                    ?: "arch"
                 val bmp = path?.takeIf { it.isNotEmpty() }
-                    ?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+                    ?.let { WidgetBitmaps.decodeCard(context, it, shape) }
                 if (bmp != null) {
                     setViewVisibility(R.id.widget_sticker_latest, android.view.View.VISIBLE)
                     setImageViewBitmap(R.id.widget_sticker_latest, bmp)

@@ -27,9 +27,11 @@ class PaywallScreen extends StatefulWidget {
   /// Presents the paywall. Returns true when the user unlocked Pro.
   ///
   /// Tries the RevenueCat Paywall sheet first (dashboard template,
-  /// trial messaging included). Falls back to this custom screen when
+  /// trial messaging included). Falls back to the custom screen when
   /// no dashboard paywall is attached or the sheet errors — so the
   /// gate works from day one, before dashboard setup is finished.
+  /// Prefer [MomentPaywallService.maybeShow] at call sites (frequency
+  /// caps + quota checks live there).
   static Future<bool> show(
     BuildContext context, {
     required bool locked,
@@ -51,6 +53,33 @@ class PaywallScreen extends StatefulWidget {
       return false;
     }
     // Error / no dashboard paywall → custom screen fallback.
+    return showCustomWithNavigator(
+      navigator,
+      locked: locked,
+      placement: placement,
+    );
+  }
+
+  /// Direct route to the custom screen (used as fallback by
+  /// [MomentPaywallService] and for previews). Callers log the
+  /// paywall_shown event — this route never logs itself.
+  static Future<bool> showCustom(
+    BuildContext context, {
+    required bool locked,
+    required String placement,
+  }) async {
+    return showCustomWithNavigator(
+      Navigator.of(context),
+      locked: locked,
+      placement: placement,
+    );
+  }
+
+  static Future<bool> showCustomWithNavigator(
+    NavigatorState navigator, {
+    required bool locked,
+    required String placement,
+  }) async {
     final unlocked = await navigator.push<bool>(
       PageRouteBuilder(
         fullscreenDialog: true,
@@ -87,6 +116,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
   bool _yearly = true;
   bool _busy = false;
   int _made = 0;
+  String? _error;
 
   @override
   void initState() {
@@ -122,14 +152,24 @@ class _PaywallScreenState extends State<PaywallScreen> {
   Future<void> _buy() async {
     if (_busy) return;
     final pkg = _yearly ? (_yearlyPkg ?? _monthly) : (_monthly ?? _yearlyPkg);
-    if (pkg == null) return;
-    setState(() => _busy = true);
+    if (pkg == null) {
+      setState(() => _error =
+          'Plans are still loading — check your connection and retry.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     AppHaptics.tap();
     try {
       final ok = await RevenueCatService.instance.purchase(pkg);
       if (ok && mounted) {
         AppHaptics.milestone();
         Navigator.of(context).pop(true);
+      } else if (mounted) {
+        setState(() => _error =
+            'Purchase did not complete. No charge was made — try again.');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -246,6 +286,19 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.4,
+                            color: Color(0xFFFF9D0A),
+                          ),
+                        ),
+                      ),
                     // privacy-policy + terms links: reachable in-app and
                     // mirrored as the Play listing privacy URL.
                     Row(

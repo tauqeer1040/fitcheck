@@ -16,6 +16,7 @@ import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
 import '../services/analytics_service.dart';
 import '../services/growth_service.dart';
+import '../services/moment_paywall_service.dart';
 import '../services/notification_service.dart';
 import '../services/pro_access_service.dart';
 import '../services/revenuecat_service.dart';
@@ -27,7 +28,6 @@ import '../widgets/genie_flight.dart';
 import '../widgets/sticker_grid.dart';
 import 'photo_preview_screen.dart';
 import 'growth_prompt_sheet.dart';
-import 'paywall_screen.dart';
 import 'sticker_detail_screen.dart';
 
 /// Apple Notes dark-mode palette.
@@ -264,10 +264,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
       if (!RevenueCatService.instance.isPro && mounted) {
         await Future<void>.delayed(const Duration(milliseconds: 600));
         if (!mounted) return;
-        await PaywallScreen.show(
+        await MomentPaywallService.maybeShow(
           context,
-          locked: false,
           placement: 'onboarding',
+          locked: false,
         );
       }
     }
@@ -319,6 +319,25 @@ class _GalleryScreenState extends State<GalleryScreen> {
     AppHaptics.tap();
     setState(() => _shapeBgOn = !_shapeBgOn);
     _persistShapeBg();
+  }
+
+  /// Appbar Pro button: launches the paywall on demand (manual
+  /// placement, dismissable). Pro users land in Customer Center
+  /// instead — manage, restore, or cancel from one place.
+  Future<void> _openPro() async {
+    AppHaptics.tap();
+    await RevenueCatService.instance.ensureInitialized();
+    if (!mounted) return;
+    if (RevenueCatService.instance.isPro) {
+      await RevenueCatService.instance.presentCustomerCenter();
+      return;
+    }
+    await MomentPaywallService.maybeShow(
+      context,
+      placement: 'manual',
+      locked: false,
+      force: true,
+    );
   }
 
   Future<void> _persistShapeBg() async {
@@ -378,12 +397,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
     await RevenueCatService.instance.ensureInitialized();
     if (!await ProAccessService.canCreateFree()) {
       if (!mounted) return;
-      await PaywallScreen.show(
+      final unlocked = await MomentPaywallService.maybeShow(
         context,
-        locked: true,
         placement: 'create_gate',
+        locked: true,
       );
-      if (!RevenueCatService.instance.isPro) return;
+      if (!unlocked) return;
     }
     String? pickedPath;
     try {
@@ -577,6 +596,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
             icon: const Icon(
               Icons.favorite_border_rounded,
               color: NotesColors.text,
+            ),
+          ),
+          // Pro: paywall on demand (Customer Center when subscribed).
+          IconButton(
+            tooltip: 'StickerPants Pro',
+            onPressed: _openPro,
+            icon: const Icon(
+              Icons.workspace_premium_outlined,
+              color: NotesColors.yellow,
             ),
           ),
           // Solid shape-backdrop toggle for grid stickers.

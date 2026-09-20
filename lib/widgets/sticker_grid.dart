@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/outfit_sticker.dart';
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
@@ -121,10 +122,34 @@ class _StickerGridState extends State<StickerGrid>
     setState(() => _lineIndex = (_lineIndex + 1) % _pickLines.length);
   }
 
-  /// Arrow: pinned 130deg (the keeper angle), tap it to swap art with a
-  /// jelly wobble.
-  final double _arrowAngle = 130 * math.pi / 180;
+  /// Arrow angles: arrow.png is LOCKED at 30deg; arrow2 keeps its
+  /// adjustable 130deg keeper (slider + persisted). Both arts are
+  /// content-trimmed so equal widget heights render equal sizes.
+  static const double _arrowOneLockedDeg = 30;
+  static const double _arrowTwoDefault = 130;
+  double _arrowTwoDeg = _arrowTwoDefault;
   bool _arrowTwo = true;
+
+  double get _arrowDeg => _arrowTwo ? _arrowTwoDeg : _arrowOneLockedDeg;
+
+  Future<void> _loadArrowAngles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final two = prefs.getDouble('gallery_arrow2_deg');
+      if (!mounted) return;
+      setState(() {
+        if (two != null) _arrowTwoDeg = two.clamp(0, 360);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _setArrowDeg(double deg) async {
+    setState(() => _arrowTwoDeg = deg);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('gallery_arrow2_deg', deg);
+    } catch (_) {}
+  }
   late final AnimationController _arrowWobble = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 600),
@@ -171,6 +196,7 @@ class _StickerGridState extends State<StickerGrid>
   @override
   void initState() {
     super.initState();
+    _loadArrowAngles();
     _settle.addListener(() {
       if (mounted) setState(() => _liveScale = _settle.value);
     });
@@ -356,10 +382,10 @@ class _StickerGridState extends State<StickerGrid>
               curve: AppMotion.appleEase,
             ),
         const SizedBox(height: 8),
-        // Arrow: tap to swap art with a jelly bounce. Angle is pinned
-        // at the keeper 130deg.
+        // Arrow: tap to swap art with a jelly bounce. Each art keeps
+        // its own angle, tuned with the slider underneath.
         Transform.rotate(
-          angle: _arrowAngle,
+          angle: _arrowDeg * math.pi / 180,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _swapArrow,
@@ -382,6 +408,49 @@ class _StickerGridState extends State<StickerGrid>
             ),
           ),
         ),
+        // Angle slider: arrow2 only. arrow.png is locked at 30deg.
+        if (_arrowTwo)
+          SizedBox(
+            width: 240,
+            child: Row(
+              children: [
+                Text(
+                  '${_arrowDeg.round()}°',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: const Color(0xFFFFD60A),
+                      inactiveTrackColor:
+                          Colors.white.withValues(alpha: 0.15),
+                      thumbColor: const Color(0xFFFFD60A),
+                      overlayColor: const Color(0xFFFFD60A).withValues(
+                        alpha: 0.2,
+                      ),
+                      trackHeight: 3,
+                    ),
+                    child: Slider(
+                      value: _arrowDeg,
+                      min: 0,
+                      max: 360,
+                      divisions: 72,
+                      label: '${_arrowDeg.round()}°',
+                      onChanged: (v) => setState(() => _arrowTwoDeg = v),
+                      onChangeEnd: (v) {
+                        AppHaptics.step();
+                        _setArrowDeg(v);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
       ),
     );

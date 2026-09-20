@@ -1,10 +1,12 @@
 package com.taucity.stickerpants
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+// FlutterFragmentActivity (not FlutterActivity): required by the
+// RevenueCat native paywall sheet, which presents as a Fragment.
+class MainActivity : FlutterFragmentActivity() {
 
     private val channelName = "stickerpants/whatsapp_stickers"
 

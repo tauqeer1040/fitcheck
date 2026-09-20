@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
@@ -86,47 +85,10 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
   }
 
   Future<void> _load() async {
-    // Play User Data policy: prominent disclosure + explicit user
-    // consent BEFORE the first system photo-permission prompt. Photos
-    // stay on-device (cutout runs locally); access only reads images
-    // the user picks for stickers.
-    final prefs = await SharedPreferences.getInstance();
-    if (!(prefs.getBool('photo_disclosure_accepted') ?? false)) {
-      if (!mounted) return;
-      final accepted = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          backgroundColor: const Color(0xFF2C2C2E),
-          title: const Text('Your photos stay yours'),
-          content: const Text(
-            'StickerPants reads the photos you pick so it can cut '
-            'outfit stickers from them — right on your device. '
-            'Your photos are never uploaded, shared, or used for ads.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Not now'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Continue'),
-            ),
-          ],
-        ),
-      );
-      if (accepted != true) {
-        if (mounted) {
-          setState(() {
-            _checked = true;
-            _hasPermission = false;
-          });
-        }
-        return;
-      }
-      await prefs.setBool('photo_disclosure_accepted', true);
-    }
+    // Photo permission is asked back-to-back after notifications during
+    // onboarding; here we just (re-)request. The OS shows its popup on
+    // first ask; on later denials _requestAccess explains + deep-links
+    // to Settings instead.
     final permission = await PhotoManager.requestPermissionExtend();
     final granted = permission.hasAccess;
 

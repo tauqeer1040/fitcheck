@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- M3 large container: 28dp static radius (pre-S). API 31+ uses the
-     system widget radius via drawable-v31/widget_stickers_bg.xml. -->
+<!-- API 31+: follow the launcher's M3 widget radius exactly. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#E61C1C1E" />
-    <corners android:radius="28dp" />
+    <corners android:radius="@android:dimen/system_app_widget_background_radius" />
 </shape>
