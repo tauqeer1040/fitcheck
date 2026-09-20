@@ -14,7 +14,20 @@ import 'package:material_new_shapes/material_new_shapes.dart';
 class MorphingShapeClip extends StatefulWidget {
   final Widget child;
 
-  const MorphingShapeClip({super.key, required this.child});
+  /// Scale the whole clip converges to while it runs (1.0 = endless,
+  /// no shrink — demo mode). Preview passes ~0.55 so the morphing
+  /// photo visibly shrinks toward the emerging cutout size.
+  final double endScale;
+
+  /// Time to travel from 1.0 to [endScale], then holds.
+  final Duration shrinkDuration;
+
+  const MorphingShapeClip({
+    super.key,
+    required this.child,
+    this.endScale = 1.0,
+    this.shrinkDuration = const Duration(seconds: 4),
+  });
 
   @override
   State<MorphingShapeClip> createState() => _MorphingShapeClipState();
@@ -22,8 +35,9 @@ class MorphingShapeClip extends StatefulWidget {
 
 class _MorphingShapeClipState extends State<MorphingShapeClip>
     with TickerProviderStateMixin {
-  static const int _morphIntervalMs = 650;
-  static const int _globalRotationMs = 4666;
+  // M3E timings, slowed 30% for readability.
+  static const int _morphIntervalMs = 845;
+  static const int _globalRotationMs = 6066;
 
   static final List<RoundedPolygon> _polygons = [
     MaterialShapes.softBurst,
@@ -38,6 +52,7 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
   late final List<Morph> _morphSequence;
   late final AnimationController _morphController;
   late final AnimationController _rotationController;
+  late final AnimationController _shrinkController;
   Timer? _morphTimer;
   int _morphIndex = 0;
 
@@ -65,6 +80,12 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
       duration: const Duration(milliseconds: _globalRotationMs),
       vsync: this,
     )..repeat();
+    // Slow convergence toward the cutout size. easeOut so most of the
+    // travel happens early, then it hovers while ML finishes.
+    _shrinkController = AnimationController(
+      duration: widget.shrinkDuration,
+      vsync: this,
+    )..forward();
     _morphTimer = Timer.periodic(
       const Duration(milliseconds: _morphIntervalMs),
       (_) => _nextMorph(),
@@ -88,6 +109,7 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
     _morphTimer?.cancel();
     _morphController.dispose();
     _rotationController.dispose();
+    _shrinkController.dispose();
     super.dispose();
   }
 
@@ -95,17 +117,26 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: AnimatedBuilder(
-        animation: Listenable.merge([_morphController, _rotationController]),
+        animation: Listenable.merge(
+            [_morphController, _rotationController, _shrinkController]),
         builder: (context, child) {
+          final shrink = 1.0 -
+              (1.0 - widget.endScale) *
+                  Curves.easeOut.transform(
+                    _shrinkController.value.clamp(0.0, 1.0),
+                  );
           // Whole clipped output rotates: image turns WITH the shape.
-          return Transform.rotate(
-            angle: _rotationController.value * math.pi * 2,
-            child: ClipPath(
-              clipper: _MorphClipper(
-                _morphSequence[_morphIndex],
-                _morphController.value.clamp(0.0, 1.0),
+          return Transform.scale(
+            scale: shrink,
+            child: Transform.rotate(
+              angle: _rotationController.value * math.pi * 2,
+              child: ClipPath(
+                clipper: _MorphClipper(
+                  _morphSequence[_morphIndex],
+                  _morphController.value.clamp(0.0, 1.0),
+                ),
+                child: child,
               ),
-              child: child,
             ),
           );
         },

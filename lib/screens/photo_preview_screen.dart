@@ -428,6 +428,7 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                   width: w,
                   height: h,
                   child: MorphingShapeClip(
+                    endScale: 0.55,
                     child: Opacity(
                       opacity: (1.0 - tFade).clamp(0.0, 1.0),
                       child: Image.file(

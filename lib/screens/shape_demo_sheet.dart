@@ -80,7 +80,7 @@ class _ShapeDemoSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            '650ms morphs · full rotation every 4.7s',
+            '845ms morphs · full rotation every 6.1s',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.45),
               fontSize: 12,
