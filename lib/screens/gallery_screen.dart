@@ -29,6 +29,7 @@ import '../widgets/genie_flight.dart';
 import '../widgets/sticker_grid.dart';
 import 'photo_preview_screen.dart';
 import 'growth_prompt_sheet.dart';
+import 'shape_demo_sheet.dart';
 import 'sticker_detail_screen.dart';
 
 /// Apple Notes dark-mode palette.
@@ -632,6 +633,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
             onPressed: _openSupportSheet,
             icon: const Icon(
               Icons.favorite_border_rounded,
+              color: NotesColors.text,
+            ),
+          ),
+          // Shape demo: endless M3E morph + rotation overlay.
+          IconButton(
+            tooltip: 'Shape demo',
+            onPressed: () => showShapeDemo(context),
+            icon: const Icon(
+              Icons.auto_awesome_outlined,
               color: NotesColors.text,
             ),
           ),
