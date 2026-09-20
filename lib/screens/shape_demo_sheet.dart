@@ -24,7 +24,6 @@ class _ShapeDemoSheet extends StatelessWidget {
     'softBurst',
     'cookie9',
     'gem',
-    'flower',
     'sunny',
     'cookie4',
     'oval',

@@ -81,20 +81,40 @@ class ShapedSticker extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           // Solid colored silhouette behind — the art overflows it.
-          // Direct transform (not AnimatedScale): the scale driver already
-          // animates per-frame, so a nested implicit animation would chase
-          // its target with a springy lag — reading as a jiggle. This
-          // tracks the driver exactly, no overshoot of its own.
+          // Always square (side = tighter dimension × shapeScale),
+          // whatever the outer box aspect is. Direct transform (not
+          // AnimatedScale): the scale driver already animates per-frame,
+          // so a nested implicit animation would chase its target with
+          // a springy lag — reading as a jiggle. This tracks the
+          // driver exactly, no overshoot of its own.
           Transform.scale(
             scale: effectiveCardScale,
-            child: FractionallySizedBox(
-              widthFactor: shapeScale,
-              heightFactor: shapeScale,
-              child: M3Container(
-                shape,
-                color: Color(dominantColor),
-                child: const SizedBox.expand(),
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final bounded = constraints.hasBoundedWidth &&
+                    constraints.hasBoundedHeight;
+                final side = bounded
+                    ? (constraints.maxWidth < constraints.maxHeight
+                            ? constraints.maxWidth
+                            : constraints.maxHeight) *
+                        shapeScale
+                    : 0.0;
+                final card = M3Container(
+                  shape,
+                  color: Color(dominantColor),
+                  child: const SizedBox.expand(),
+                );
+                if (side <= 0) {
+                  return FractionallySizedBox(
+                    widthFactor: shapeScale,
+                    heightFactor: shapeScale,
+                    child: card,
+                  );
+                }
+                return Center(
+                  child: SizedBox(width: side, height: side, child: card),
+                );
+              },
             ),
           ),
           Positioned.fill(

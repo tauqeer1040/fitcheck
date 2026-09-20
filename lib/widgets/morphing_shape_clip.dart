@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -28,7 +29,6 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
     MaterialShapes.softBurst,
     MaterialShapes.cookie9Sided,
     MaterialShapes.gem,
-    MaterialShapes.flower,
     MaterialShapes.sunny,
     MaterialShapes.cookie4Sided,
     MaterialShapes.oval,
@@ -97,13 +97,16 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
       child: AnimatedBuilder(
         animation: Listenable.merge([_morphController, _rotationController]),
         builder: (context, child) {
-          return ClipPath(
-            clipper: _MorphRotatingClipper(
-              _morphSequence[_morphIndex],
-              _morphController.value.clamp(0.0, 1.0),
-              _rotationController.value * 360.0,
+          // Whole clipped output rotates: image turns WITH the shape.
+          return Transform.rotate(
+            angle: _rotationController.value * math.pi * 2,
+            child: ClipPath(
+              clipper: _MorphClipper(
+                _morphSequence[_morphIndex],
+                _morphController.value.clamp(0.0, 1.0),
+              ),
+              child: child,
             ),
-            child: child,
           );
         },
         child: widget.child,
@@ -112,21 +115,16 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
   }
 }
 
-class _MorphRotatingClipper extends CustomClipper<Path> {
+class _MorphClipper extends CustomClipper<Path> {
   final Morph morph;
   final double progress;
-  final double rotationDeg;
 
-  _MorphRotatingClipper(this.morph, this.progress, this.rotationDeg);
+  _MorphClipper(this.morph, this.progress);
 
   @override
   Path getClip(Size size) {
-    // Unit-space morph path, outline rotated (image stays upright),
-    // then scaled to the widget box.
-    final path = morph.toPath(
-      progress: progress,
-      startAngle: rotationDeg.round() % 360,
-    );
+    // Unit-space morph path scaled to the widget box.
+    final path = morph.toPath(progress: progress);
     final scaled = path.transform(
       Matrix4.diagonal3Values(size.width, size.height, 1).storage,
     );
@@ -139,5 +137,5 @@ class _MorphRotatingClipper extends CustomClipper<Path> {
   }
 
   @override
-  bool shouldReclip(_MorphRotatingClipper oldClipper) => true;
+  bool shouldReclip(_MorphClipper oldClipper) => true;
 }

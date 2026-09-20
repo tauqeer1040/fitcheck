@@ -1,38 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 2x4 widget: 12-cookie M3E container with the three recent stickers
+     floating on top. The row carries negative margins so stickers leak
+     over the cookie's scalloped edge instead of sitting inset. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_container"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:layout_margin="8dp"
-    android:background="@drawable/widget_stickers_bg"
-    android:gravity="center"
-    android:orientation="horizontal"
-    android:padding="10dp">
+    android:layout_height="match_parent">
 
     <ImageView
-        android:id="@+id/widget_sticker_0"
-        android:layout_width="0dp"
+        android:id="@+id/widget_bg"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:layout_marginEnd="8dp"
-        android:scaleType="fitCenter"
-        android:contentDescription="Recent sticker 1" />
+        android:scaleType="fitXY"
+        android:contentDescription="@null" />
 
-    <ImageView
-        android:id="@+id/widget_sticker_1"
-        android:layout_width="0dp"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:layout_marginEnd="8dp"
-        android:scaleType="fitCenter"
-        android:contentDescription="Recent sticker 2" />
+        android:layout_margin="-12dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:padding="10dp">
 
-    <ImageView
-        android:id="@+id/widget_sticker_2"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:scaleType="fitCenter"
-        android:contentDescription="Recent sticker 3" />
+        <ImageView
+            android:id="@+id/widget_sticker_0"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginEnd="2dp"
+            android:scaleType="fitCenter"
+            android:contentDescription="Recent sticker 1" />
 
-</LinearLayout>
+        <ImageView
+            android:id="@+id/widget_sticker_1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginEnd="2dp"
+            android:scaleType="fitCenter"
+            android:contentDescription="Recent sticker 2" />
+
+        <ImageView
+            android:id="@+id/widget_sticker_2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:scaleType="fitCenter"
+            android:contentDescription="Recent sticker 3" />
+
+    </LinearLayout>
+
+</FrameLayout>
