@@ -134,7 +134,10 @@ class ShapedSticker extends StatelessWidget {
   }
 }
 
-/// Square silhouette box: side = tighter dimension × [shapeScale].
+/// Square silhouette box: side = full width × [shapeScale].
+/// Height is copied from width so the box is always 1:1 — sizing off
+/// the tighter dimension shrank portrait boxes and the rotation read
+/// as cropped top/bottom.
 /// Optionally rotates the card in place (fullscreen delight) — the
 /// rotation wraps the whole card including its centering, so layout
 /// never shifts while it turns.
@@ -183,10 +186,7 @@ class _SilhouetteBoxState extends State<_SilhouetteBox>
         final bounded = constraints.hasBoundedWidth &&
             constraints.hasBoundedHeight;
         final side = bounded
-            ? (constraints.maxWidth < constraints.maxHeight
-                    ? constraints.maxWidth
-                    : constraints.maxHeight) *
-                widget.shapeScale
+            ? constraints.maxWidth * widget.shapeScale
             : 0.0;
         final box = side <= 0
             ? FractionallySizedBox(

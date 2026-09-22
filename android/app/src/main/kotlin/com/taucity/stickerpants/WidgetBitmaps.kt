@@ -45,6 +45,27 @@ object WidgetBitmaps {
         }.getOrNull()
     }
 
+    /**
+     * Cutout art, sampled down but NOT clipped: the silhouette is a
+     * separate view beneath it now, so the art keeps its own alpha
+     * edges and overflows the shape.
+     */
+    fun decodeArt(path: String, maxSizePx: Int = 512): Bitmap? {
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            val rawW = bounds.outWidth
+            val rawH = bounds.outHeight
+            if (rawW <= 0 || rawH <= 0) return null
+            var sample = 1
+            while ((rawW / sample) > maxSizePx || (rawH / sample) > maxSizePx) {
+                sample *= 2
+            }
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            BitmapFactory.decodeFile(path, opts)
+        }.getOrNull()
+    }
+
     private fun clipShape(src: Bitmap, shape: String, density: Float): Bitmap {
         val w = src.width.toFloat()
         val h = src.height.toFloat()

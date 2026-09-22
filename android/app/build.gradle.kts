@@ -39,10 +39,31 @@ android {
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // No Chromebooks: the only ABIs worth shipping. Debug adds
+        // x86_64 back below so emulator testing keeps working.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {
+        debug {
+            // Emulators are x86_64; release stays phone-only.
+            ndk {
+                abiFilters += "x86_64"
+            }
+        }
         release {
+            // Smaller downloads: R8 strips unused Java/Kotlin code and
+            // resources (plugin entry points are pinned in
+            // proguard-rules.pro; the Dart AOT lib is unaffected).
+            // Debug builds keep everything so emulator testing works.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             if (keystorePropsFile.exists()) {
                 signingConfigs {
                     create("release") {
@@ -59,6 +80,10 @@ android {
             }
         }
     }
+
+    dependencies {
+        coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    }
 }
 
 kotlin {
@@ -71,6 +96,21 @@ flutter {
     source = "../.."
 }
 
-dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+// AGP 9 hides the legacy android-DSL implementations (android.newDsl is
+// false via the Flutter template), so new-DSL-only settings go through
+// the public ApplicationExtension interface, which stays available.
+configure<com.android.build.api.dsl.ApplicationExtension> {
+    androidResources {
+        // English-only app: drop every other locale's strings from the
+        // support libraries instead of shipping them.
+        localeFilters += "en"
+    }
+    packaging {
+        jniLibs {
+            // tflite_flutter bundles the GPU-delegate .so per ABI, but the
+            // app only ever creates a CPU Interpreter (see
+            // MulticlassBackend._load) — ~2.5MB/ABI of dead weight.
+            excludes += "**/libtensorflowlite_gpu_jni.so"
+        }
+    }
 }

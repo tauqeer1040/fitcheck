@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,7 +8,30 @@ import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
+import '../screens/photo_preview_screen.dart';
 import '../services/sticker_style_service.dart';
+import 'genie_flight.dart';
+
+/// Pick data minted by the gallery before the container opens: the
+/// open builder needs everything synchronously when the flight starts.
+typedef PreviewSavedCallback = void Function(
+    String path, StickerStyle style);
+
+class GalleryPickData {
+  final String assetId;
+  final String imagePath;
+  final String heroTag;
+  final int shapeIndex;
+  final PreviewSavedCallback onSaved;
+
+  const GalleryPickData({
+    required this.assetId,
+    required this.imagePath,
+    required this.heroTag,
+    required this.shapeIndex,
+    required this.onSaved,
+  });
+}
 
 /// Persistent frosted-glass bottom sheet, resizable by dragging the handle:
 /// collapsed = single row of the most recent photos (no scrolling needed),
@@ -17,12 +41,20 @@ import '../services/sticker_style_service.dart';
 class GalleryBottomSheet extends StatefulWidget {
   final ValueChanged<AssetEntity> onPick;
 
+  /// Thumbnail style: M3 expressive shapes (rolled per photo) vs plain
+  /// rounded squares (debug toggle).
+  final bool m3Thumbs;
+
   /// Peek height of the collapsed sheet (content + handle, excl. safe
   /// area). The homescreen grid pads its bottom by this so the last row
   /// never hides underneath.
   static const double peekHeight = 150;
 
-  const GalleryBottomSheet({super.key, required this.onPick});
+  const GalleryBottomSheet({
+    super.key,
+    required this.onPick,
+    this.m3Thumbs = false,
+  });
 
   @override
   State<GalleryBottomSheet> createState() => GalleryBottomSheetState();
@@ -45,6 +77,43 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
   double _height = _collapsedHeight;
   List<AssetEntity> _recent = [];
   final _focusNode = FocusNode();
+
+  /// Called by the gallery with fully-prepped pick data: pushes the
+  /// preview on [zoomPageRoute], the same non-opaque page route the
+  /// fullscreen sticker view uses.
+  ///
+  /// It has to be non-opaque. The preview frosts the LIVE GRID behind it,
+  /// and this used to open through the sheet's OpenContainer, whose route
+  /// hard-codes `opaque => true` (animations 2.1.2, open_container.dart)
+  /// — so the grid was never composited underneath, the BackdropFilter
+  /// had nothing to blur, and the glass rendered as flat black.
+  /// Dropping the container transform also removes the pixel hack that
+  /// hid the closed thumbnail for the forward flight and restored it on a
+  /// 400ms timer, which was a visible pop between the two.
+  void openPreview(GalleryPickData data) {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      geniePageRoute(
+        // Fade-only, exactly like the fullscreen sticker: the Hero does
+        // all the moving, so a page-level zoom would fight it. The open
+        // gets a longer run than the fullscreen's 160ms — that is the
+        // app-launch beat, and 160ms read as a cut.
+        open: const Duration(milliseconds: 380),
+        page: PhotoPreviewScreen(
+          imagePath: data.imagePath,
+          heroTag: data.heroTag,
+          initialShapeIndex: data.shapeIndex,
+          onSaved: data.onSaved,
+          // Hero tag shared with the tapped thumbnail: the thumbnail's
+          // pixels fly into the preview's photo slot.
+          pickHeroTag: pickHeroTagFor(data.assetId),
+          // Full flow: subject cut out on open, cutout pops in and
+          // auto-saves into the grid.
+          autoCutout: true,
+        ),
+      ),
+    );
+  }
 
   /// Collapse back to the single-row peek height.
   /// Called on tap-away / focus loss from the sheet or its parent.
@@ -89,7 +158,14 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
     // onboarding; here we just (re-)request. The OS shows its popup on
     // first ask; on later denials _requestAccess explains + deep-links
     // to Settings instead.
-    final permission = await PhotoManager.requestPermissionExtend();
+    final permission = await PhotoManager.requestPermissionExtend(
+      requestOption: const PermissionRequestOption(
+        androidPermission: AndroidPermission(
+          type: RequestType.image,
+          mediaLocation: false,
+        ),
+      ),
+    );
     final granted = permission.hasAccess;
 
     List<AssetEntity> recent = [];
@@ -126,7 +202,14 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
   /// dialog + settings fallback when access is still denied afterwards
   /// (OS can no longer show the popup): covers rationale-on-denial.
   Future<void> _requestAccess() async {
-    final permission = await PhotoManager.requestPermissionExtend();
+    final permission = await PhotoManager.requestPermissionExtend(
+      requestOption: const PermissionRequestOption(
+        androidPermission: AndroidPermission(
+          type: RequestType.image,
+          mediaLocation: false,
+        ),
+      ),
+    );
     if (!permission.hasAccess && _askedOnce) {
       if (!mounted) return;
       final go = await showDialog<bool>(
@@ -195,25 +278,47 @@ class GalleryBottomSheetState extends State<GalleryBottomSheet> {
     }
   }
 
-  /// Photo thumbnail clipped to the photo's stable random shape — the
-  /// same shape the sticker gets when this photo is picked.
+  /// Photo thumbnail: M3 expressive clip (the photo's stable random
+  /// shape — the same shape the sticker gets) or a plain rounded
+  /// square, per the debug toggle. Plain tap target: the gallery does
+  /// async prep (gate, byte copy, cache warm) before pushing the
+  /// preview, so there is no closed container to transform out of.
+  /// Hero tag pairing a gallery thumbnail with the preview it opens.
+  /// Derived from the asset id so the thumbnail can carry it before the
+  /// tap — the shell the pick data arrives in is minted afterwards.
+  static String pickHeroTagFor(String assetId) => 'pick-$assetId';
+
   Widget _thumb(AssetEntity asset, int index, {required double size}) {
-    return GestureDetector(
-      onTap: () {
-        AppHaptics.tap();
-        widget.onPick(asset);
-      },
-      child: M3Container(
-        kStyleShapes[randomShapeIndexForAsset(asset.id)],
-        width: size,
-        height: size,
-        child: AssetEntityImage(
-          asset,
-          isOriginal: false,
-          thumbnailSize: const ThumbnailSize(256, 256),
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => Container(color: Colors.grey.shade800),
-        ),
+    final art = AssetEntityImage(
+      asset,
+      isOriginal: false,
+      thumbnailSize: const ThumbnailSize(256, 256),
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => Container(color: Colors.grey.shade800),
+    );
+    final Widget shaped = widget.m3Thumbs
+        ? M3Container(
+            kStyleShapes[randomShapeIndexForAsset(asset.id)],
+            width: size,
+            height: size,
+            child: art,
+          )
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: SizedBox(width: size, height: size, child: art),
+          );
+    // Hero source: the thumbnail's rect flies into the preview's photo
+    // slot while the route fades in, so the pick reads as an app opening
+    // instead of a cut. Pressable adds the instant press-scale on top:
+    // the gallery does async prep (permission gate, byte copy, cache
+    // warm) before it can push, and without feedback the grid looked
+    // frozen for that beat.
+    return Pressable(
+      onTap: () => widget.onPick(asset),
+      child: Hero(
+        tag: pickHeroTagFor(asset.id),
+        createRectTween: stickerFlightTween,
+        child: shaped,
       ),
     );
   }

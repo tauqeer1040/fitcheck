@@ -5,5 +5,5 @@
     android:updatePeriodMillis="86400000"
     android:initialLayout="@layout/widget_latest_sticker_layout"
     android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen">
+    android:widgetCategory="home_screen|keyguard">
 </appwidget-provider>

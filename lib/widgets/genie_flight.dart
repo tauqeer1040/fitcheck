@@ -2,18 +2,32 @@ import 'package:flutter/material.dart';
 
 /// How long a sticker flight lasts. Kept in one place so the route's
 /// reverse duration and the landing pop stay in sync.
-///
-/// Flights are intentionally linear: the default Hero rect tween carries
-/// the sticker straight from A to B with no kicks, arcs, or wobbles.
 const kGenieFlight = Duration(milliseconds: 450);
+
+/// Rect tween for every sticker flight.
+///
+/// A [PageRouteBuilder] returns null from `createRectTween`, so without
+/// this the Hero falls back to a plain `RectTween` — a dead-straight,
+/// constant-speed slide that is what made the landing read as stiff. The
+/// arc tween bows the path and eases through it, so the sticker swings
+/// home instead of sliding.
+///
+/// A flight takes its rect tween from the hero manifest, so set this on
+/// BOTH ends (source and destination) of a pair.
+RectTween stickerFlightTween(Rect? begin, Rect? end) =>
+    MaterialRectArcTween(begin: begin, end: end);
 
 /// Shared page route for sticker flights: fast fade in, slow melt away on
 /// the way back so the Hero has room to fly home. Fade-only by design —
 /// the Hero does all the moving, so nothing fights it.
-PageRouteBuilder<T> geniePageRoute<T>({required Widget page}) {
+PageRouteBuilder<T> geniePageRoute<T>({
+  required Widget page,
+  Duration open = const Duration(milliseconds: 160),
+  Duration close = kGenieFlight,
+}) {
   return PageRouteBuilder<T>(
-    transitionDuration: const Duration(milliseconds: 160),
-    reverseTransitionDuration: kGenieFlight,
+    transitionDuration: open,
+    reverseTransitionDuration: close,
     // Non-opaque so the homescreen grid stays composited underneath —
     // the detail screen's BackdropFilter needs real content to blur,
     // and an opaque route would drop the grid from the scene entirely.

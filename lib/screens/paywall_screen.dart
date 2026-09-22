@@ -8,6 +8,7 @@ import '../motion/app_haptics.dart';
 import '../services/analytics_service.dart';
 import '../services/pro_access_service.dart';
 import '../services/revenuecat_service.dart';
+import 'max_thankyou_sheet.dart';
 
 /// StickerPants paywall: 2 tiers (monthly / yearly), 7-day free trial
 /// on both, annual pre-selected. Shown two ways:
@@ -166,7 +167,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
       final ok = await RevenueCatService.instance.purchase(pkg);
       if (ok && mounted) {
         AppHaptics.milestone();
-        Navigator.of(context).pop(true);
+        // Thank-you over this screen first (context still valid),
+        // then close with success.
+        await MaxThankYouSheet.show(context, restored: false);
+        if (mounted) Navigator.of(context).pop(true);
       } else if (mounted) {
         setState(() => _error =
             'Purchase did not complete. No charge was made — try again.');
@@ -181,7 +185,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
     setState(() => _busy = true);
     try {
       final ok = await RevenueCatService.instance.restore();
-      if (ok && mounted) Navigator.of(context).pop(true);
+      if (ok && mounted) {
+        await MaxThankYouSheet.show(context, restored: true);
+        if (mounted) Navigator.of(context).pop(true);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

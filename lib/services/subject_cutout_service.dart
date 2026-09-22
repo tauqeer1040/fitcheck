@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'segmenters/cutout_backend.dart';
@@ -16,7 +17,7 @@ import 'segmenters/subject_backend.dart';
 /// pick -> downscale once (640px) -> backend confidence mask -> resample
 /// to image dims -> binarize -> keep-largest-component (the one cheap
 /// cleanup that kills stray background blobs) -> smoothstep alpha ramp ->
-/// tight crop -> crisp white halo + soft inner melt -> lossless PNG.
+/// tight crop -> crisp white halo + soft inner melt -> max-quality WebP.
 ///
 /// Backend order for [CutoutSubject.auto] is subject-seg first (purpose
 /// built masks), multiclass second (stable garments fallback). Backends
@@ -179,11 +180,16 @@ class SubjectCutoutService {
     final tComp = sw.elapsedMilliseconds;
 
     final sticker = await _outlineAndEncode(crop.pixels, crop.w, crop.h);
+    // Stored stickers are WebP at max quality (alpha preserved): roughly
+    // half the bytes of PNG at visually identical quality. The .webp
+    // extension distinguishes them from legacy .png stickers, which keep
+    // loading fine everywhere (Flutter decodes both).
+    final webpSticker = await _toWebP(sticker);
     final dir = await getApplicationDocumentsDirectory();
     final fileName =
-        'fitcheck_${DateTime.now().millisecondsSinceEpoch}.png';
+        'fitcheck_${DateTime.now().millisecondsSinceEpoch}.webp';
     final file = File('${dir.path}/$fileName');
-    await file.writeAsBytes(sticker);
+    await file.writeAsBytes(webpSticker);
     final tTotal = sw.elapsedMilliseconds;
     debugPrint('[cutout] backend=$backendName decode=${tDecode}ms '
         'seg=${tSeg - tDecode}ms clean=${tClean - tSeg}ms '
@@ -523,6 +529,18 @@ class SubjectCutoutService {
     return file.path;
   }
 
+  /// GPU PNG bytes -> WebP at max quality, alpha preserved. Quality 100
+  /// keeps every visible detail; the file lands at roughly half the PNG
+  /// size, which is what keeps sticker storage (and the WhatsApp pack
+  /// source files) small without touching pixels the eye can see.
+  static Future<Uint8List> _toWebP(Uint8List pngBytes) {
+    return FlutterImageCompress.compressWithList(
+      pngBytes,
+      quality: 100,
+      format: CompressFormat.webp,
+    );
+  }
+
   /// One-time backfill: stamps the even white ring onto a halo-free PNG
   /// in place (for stickers saved while live borders were in testing).
   /// Same geometry as the cut-time halo so all stickers match.
@@ -621,7 +639,12 @@ class SubjectCutoutService {
             final png =
                 await out.toByteData(format: ui.ImageByteFormat.png);
             if (png == null) return;
-            await File(path).writeAsBytes(png.buffer.asUint8List());
+            // Keep the file's own format: .webp stickers stay WebP,
+            // legacy .png stickers stay PNG.
+            final bytes = path.endsWith('.webp')
+                ? await _toWebP(png.buffer.asUint8List())
+                : png.buffer.asUint8List();
+            await File(path).writeAsBytes(bytes);
           } finally {
             out.dispose();
           }

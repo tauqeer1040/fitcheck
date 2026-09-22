@@ -24,6 +24,9 @@ class StickerStyle {
 /// Shape palette ordered around the HCT hue wheel (0 -> 360): warm hues
 /// get spiky/playful silhouettes, cool hues round ones, greens the
 /// botanicals. Index = floor(hue / 360 * length).
+///
+/// Append-only: shapeIndex is persisted per sticker, so existing entries
+/// (0-9) must never shift. New M3E shapes go at the end.
 final List<Shapes> kStyleShapes = [
   Shapes.gem, //            reds & warm oranges
   Shapes.c12_sided_cookie, // ambers
@@ -35,6 +38,31 @@ final List<Shapes> kStyleShapes = [
   Shapes.arch, //           indigos
   Shapes.diamond, //        purples
   Shapes.slanted, //        magentas & pinks
+  // ---- full M3E set (appended; order = Shapes enum order) ----
+  Shapes.circle,
+  Shapes.square,
+  Shapes.semicircle,
+  Shapes.triangle,
+  Shapes.arrow,
+  Shapes.fan,
+  Shapes.very_sunny,
+  Shapes.c4_sided_cookie,
+  Shapes.c6_sided_cookie,
+  Shapes.c7_sided_cookie,
+  Shapes.c9_sided_cookie,
+  Shapes.l4_leaf_clover,
+  Shapes.l8_leaf_clover,
+  Shapes.burst,
+  Shapes.soft_burst,
+  Shapes.boom,
+  Shapes.soft_boom,
+  Shapes.puffy,
+  Shapes.puffy_diamond,
+  Shapes.ghostish,
+  Shapes.pixel_circle,
+  Shapes.pixel_triangle,
+  Shapes.bun,
+  Shapes.hearth,
 ];
 
 /// Neutral fallback for images the scorer rejects (pure grayscale etc.).

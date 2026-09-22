@@ -1,25 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 2x2 widget: 12-cookie M3E container, latest sticker floating over
-     it with negative margins so it leaks past the edge. -->
+<!-- 2x2 widget: transparent — latest cutout floating over its tinted
+     silhouette. The silhouette steps through 8 pre-rendered rotation
+     frames (45deg each, 1s apart) via the launcher-driven ViewFlipper:
+     no ticker, no battery cost. Art stays static on top. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ImageView
-        android:id="@+id/widget_bg"
+    <!-- Rotation frames are stamped in at update time (60 pre-rendered
+         silhouettes, 6deg steps = clock minute-hand sweep, 1 frame/sec).
+         Static XML would need dozens of views; addView keeps it lean. -->
+    <ViewFlipper
+        android:id="@+id/widget_spin"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="fitXY"
-        android:contentDescription="@null" />
+        android:autoStart="true"
+        android:flipInterval="1000" />
 
     <ImageView
         android:id="@+id/widget_sticker_latest"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_margin="-14dp"
         android:scaleType="fitCenter"
         android:contentDescription="Latest sticker" />
+
+    <!-- Roast caption, bottom overlay so the sticker keeps full size:
+         lifted with a bottom margin; black halo outline for
+         readability, no background pill. -->
+    <TextView
+        android:id="@+id/widget_funny"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|left"
+        android:layout_marginLeft="10dp"
+        android:layout_marginRight="10dp"
+        android:layout_marginBottom="10dp"
+        android:gravity="left"
+        android:textSize="14sp"
+        android:textStyle="italic"
+        android:textColor="#CCFFFFFF"
+        android:shadowColor="#FF000000"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="6"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:contentDescription="@null" />
 
     <TextView
         android:id="@+id/widget_empty"

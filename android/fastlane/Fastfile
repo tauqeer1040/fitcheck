@@ -1,0 +1,83 @@
+default_platform(:android)
+
+# Resolve the repo root from this file rather than the current directory, so
+# every path works whether fastlane is invoked from android/ or the root.
+REPO_ROOT = File.expand_path("../..", __dir__)
+AAB_PATH = File.join(REPO_ROOT, "build/app/outputs/bundle/release/app-release.aab")
+METADATA_PATH = File.join(REPO_ROOT, "android/fastlane/metadata/android")
+JSON_KEY = File.join(REPO_ROOT, "android/fbm/stickerpants-play.json")
+
+platform :android do
+  desc "Upload store listing metadata (text + graphics) to the Play Console internal draft"
+  lane :metadata do
+    supply(
+      track: "internal",
+      release_status: "draft",
+      # Internal holds multiple releases (vc2 + vc3 draft); pin the draft.
+      # Bump alongside pubspec.yaml's build number.
+      version_code: 4,
+      metadata_path: METADATA_PATH,
+      json_key: JSON_KEY,
+      skip_upload_aab: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: false,
+      skip_upload_screenshots: false,
+      check_superseded_tracks: true
+    )
+  end
+
+  desc "Upload the prebuilt release AAB + metadata + graphics to the Play Console internal draft"
+  lane :deploy do
+    supply(
+      track: "internal",
+      release_status: "draft",
+      metadata_path: METADATA_PATH,
+      json_key: JSON_KEY,
+      aab: AAB_PATH,
+      skip_upload_images: false,
+      skip_upload_screenshots: false,
+      check_superseded_tracks: true
+    )
+  end
+
+  desc "Build the release AAB and ship it to the Play production track (full rollout)"
+  lane :prod do
+    # Version comes from pubspec.yaml (versionName+buildNumber); bump the
+    # build number before running — Play rejects a reused versionCode.
+    # NOTE: while the app itself is still an unpublished draft, Play
+    # rejects release_status "completed" ("Only releases with status draft
+    # may be created on draft app"). For the first production release,
+    # upload with release_status "draft" instead (see run below), then
+    # send to review from the Console; "completed" works after that.
+    sh("cd #{REPO_ROOT} && flutter build appbundle --release")
+    supply(
+      aab: AAB_PATH,
+      track: "production",
+      release_status: "completed",
+      json_key: JSON_KEY,
+      # The live listing is managed via the `metadata` lane; uploading the
+      # local metadata folder here would overwrite it.
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      check_superseded_tracks: true
+    )
+  end
+
+  desc "Build the release AAB and ship it to the Play production track as a staged rollout (default 20%)"
+  lane :prod_staged do |options|
+    user_fraction = (options[:fraction] || 0.2).to_f
+    sh("cd #{REPO_ROOT} && flutter build appbundle --release")
+    supply(
+      aab: AAB_PATH,
+      track: "production",
+      release_status: "inProgress",
+      rollout: user_fraction,
+      json_key: JSON_KEY,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      check_superseded_tracks: true
+    )
+  end
+end

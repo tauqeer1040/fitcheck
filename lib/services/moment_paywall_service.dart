@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../screens/max_thankyou_sheet.dart';
 import '../screens/paywall_screen.dart';
 import 'analytics_service.dart';
 import 'pro_access_service.dart';
@@ -72,6 +73,13 @@ class MomentPaywallService {
       if (result == PaywallResult.purchased ||
           result == PaywallResult.restored) {
         await RevenueCatService.instance.refreshCustomerInfo();
+        // Post-subscription thank-you (once per event, dismissable).
+        if (context.mounted) {
+          await MaxThankYouSheet.show(
+            context,
+            restored: result == PaywallResult.restored,
+          );
+        }
         return true;
       }
       if (result == PaywallResult.cancelled) {

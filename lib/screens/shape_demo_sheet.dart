@@ -1,29 +1,30 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 
 import '../motion/app_haptics.dart';
-import '../services/sticker_style_service.dart';
 import '../services/whatsapp_sticker_service.dart';
 
-/// Homescreen widget samples: live miniature previews of the 2x4
-/// recents widget and the 2x2 latest widget — 12-cookie M3E container
-/// with the user's actual latest stickers (logo fallback when empty).
-/// Opened from the appbar sparkle button.
-Future<void> showShapeDemo(BuildContext context) {
+/// Homescreen widget samples: transparent rounded-square silhouette
+/// holding the sticker + its tinted logo silhouette - 2x2 latest, 2x4
+/// recents - with the user's actual latest stickers (logo fallback
+/// when empty). Each sample's slider scrubs the logo angle while the
+/// art stays static: the fullscreen silhouette rotation, one frozen
+/// frame at a time. Opened from the appbar sparkle button.
+Future<void> showShapeDemo(BuildContext context, {required int bgColor}) {
   AppHaptics.tap();
   return showModalBottomSheet(
     context: context,
     useSafeArea: true,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => const _WidgetSamplesSheet(),
+    builder: (_) => _WidgetSamplesSheet(bgColor: bgColor),
   );
 }
 
 class _WidgetSamplesSheet extends StatefulWidget {
-  const _WidgetSamplesSheet();
+  final int bgColor;
+  const _WidgetSamplesSheet({required this.bgColor});
 
   @override
   State<_WidgetSamplesSheet> createState() => _WidgetSamplesSheetState();
@@ -31,6 +32,10 @@ class _WidgetSamplesSheet extends StatefulWidget {
 
 class _WidgetSamplesSheetState extends State<_WidgetSamplesSheet> {
   List<String> _recent = [];
+
+  /// Per-sample logo-silhouette angles (radians): 0 = 2x2 latest,
+  /// 1 = 2x4 recents. Preview-only — nothing persists.
+  final List<double> _angles = [0.0, 0.0];
 
   @override
   void initState() {
@@ -49,6 +54,8 @@ class _WidgetSamplesSheetState extends State<_WidgetSamplesSheet> {
     } catch (_) {}
   }
 
+  /// Sticker art (logo fallback when empty), shown plain inside the
+  /// shaped sample containers below.
   Widget _sampleImage(String? path, {required double size}) {
     final Widget img = (path != null && path.isNotEmpty && File(path).existsSync())
         ? Image.file(File(path), fit: BoxFit.cover)
@@ -56,17 +63,91 @@ class _WidgetSamplesSheetState extends State<_WidgetSamplesSheet> {
     return SizedBox(width: size, height: size, child: img);
   }
 
+  /// One sticker + its logo silhouette: tinted logo rotating
+  /// underneath, art static on top. The slider scrubs the angle.
+  Widget _spinningSticker({
+    required String? imagePath,
+    required double artSize,
+    required int index,
+  }) {
+    final bgSize = artSize * 0.7;
+    return SizedBox(
+      width: artSize,
+      height: artSize,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          Transform.rotate(
+            angle: _angles[index],
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                Color(widget.bgColor),
+                BlendMode.srcIn,
+              ),
+              child: Image.asset(
+                'assets/logo3.png',
+                width: bgSize,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          _sampleImage(imagePath, size: artSize),
+        ],
+      ),
+    );
+  }
+
+  /// Rotation slider per sample: 0–360° on the bg shape, art static.
+  Widget _angleSlider(int index) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(
+          Icons.rotate_left_rounded,
+          color: Colors.white54,
+          size: 16,
+        ),
+        SizedBox(
+          width: 160,
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: const Color(0xFFFFD60A),
+              inactiveTrackColor: Colors.white24,
+              thumbColor: const Color(0xFFFFD60A),
+              overlayShape: SliderComponentShape.noOverlay,
+              trackHeight: 3,
+            ),
+            child: Slider(
+              value: _angles[index],
+              min: 0,
+              max: 6.2832,
+              divisions: 72,
+              label: '${(_angles[index] * 57.2958).round()}°',
+              onChanged: (v) => setState(() => _angles[index] = v),
+            ),
+          ),
+        ),
+        const Icon(
+          Icons.rotate_right_rounded,
+          color: Colors.white54,
+          size: 16,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final cookie = kStyleShapes[1]; // c12_sided_cookie
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
       decoration: const BoxDecoration(
         color: Color(0xFF1C1C1E),
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             width: 40,
@@ -94,43 +175,8 @@ class _WidgetSamplesSheetState extends State<_WidgetSamplesSheet> {
             ),
           ),
           const SizedBox(height: 20),
-          // 2x4 recents sample: cookie container, three latest leaking
-          // over the edge like the real widget.
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '2 × 4 · Recent stickers',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: M3Container(
-              cookie,
-              width: 300,
-              height: 132,
-              color: const Color(0xE61C1C1E),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    for (int i = 0; i < 3; i++)
-                      _sampleImage(
-                        i < _recent.length ? _recent[i] : null,
-                        size: 88,
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          // 2x2 latest sample.
+          // 2x2 latest samples: gem + arch containers, mirroring the
+          // real widget's alternating shapes.
           const Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -143,21 +189,54 @@ class _WidgetSamplesSheetState extends State<_WidgetSamplesSheet> {
             ),
           ),
           const SizedBox(height: 8),
-          Center(
-            child: M3Container(
-              cookie,
-              width: 150,
-              height: 150,
-              color: const Color(0xE61C1C1E),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: _sampleImage(
-                  _recent.isNotEmpty ? _recent.first : null,
-                  size: 118,
-                ),
+          // Transparent rounded-square silhouette holding the sticker
+          // + its rotating bg shape (slider scrubs the angle).
+          Container(
+            width: 150,
+            height: 150,
+            decoration:
+                BoxDecoration(borderRadius: BorderRadius.circular(28)),
+            child: Center(
+              child: _spinningSticker(
+                imagePath: _recent.isNotEmpty ? _recent.first : null,
+                artSize: 118,
+                index: 0,
               ),
             ),
           ),
+          _angleSlider(0),
+          const SizedBox(height: 20),
+          // 2x4 recents sample: logo silhouette + stickers.
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '2 × 4 · Recent stickers',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: 300,
+            height: 132,
+            decoration:
+                BoxDecoration(borderRadius: BorderRadius.circular(28)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (int i = 0; i < 3; i++)
+                  _spinningSticker(
+                    imagePath: i < _recent.length ? _recent[i] : null,
+                    artSize: 88,
+                    index: 1,
+                  ),
+              ],
+            ),
+          ),
+          _angleSlider(1),
           const SizedBox(height: 20),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -176,6 +255,7 @@ class _WidgetSamplesSheetState extends State<_WidgetSamplesSheet> {
             child: const Text('Close'),
           ),
         ],
+        ),
       ),
     );
   }

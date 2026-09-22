@@ -20,8 +20,9 @@ const playStoreUrl =
 
 Future<void> showGrowthPromptSheet(
   BuildContext context,
-  GrowthAction action,
-) async {
+  GrowthAction action, {
+  List<GrowthAction>? actions,
+}) async {
   // Reminders action never renders when already granted — no mute UI.
   if (action == GrowthAction.reminders) {
     try {
@@ -35,7 +36,10 @@ Future<void> showGrowthPromptSheet(
     useSafeArea: true,
     backgroundColor: Colors.transparent,
     builder: (ctx) => _GrowthGlass(
-      child: _GrowthSheet(action: action),
+      child: _GrowthSheet(
+        action: action,
+        actions: actions ?? _carouselOrder,
+      ),
     ),
   );
 }
@@ -70,7 +74,8 @@ class _GrowthGlass extends StatelessWidget {
 
 class _GrowthSheet extends StatefulWidget {
   final GrowthAction action;
-  const _GrowthSheet({required this.action});
+  final List<GrowthAction> actions;
+  const _GrowthSheet({required this.action, required this.actions});
 
   @override
   State<_GrowthSheet> createState() => _GrowthSheetState();
@@ -88,14 +93,16 @@ const _carouselOrder = [
 
 class _GrowthSheetState extends State<_GrowthSheet> {
   late final PageController _pages;
+  late final List<GrowthAction> _order;
   int _index = 0;
 
   @override
   void initState() {
     super.initState();
-    _index = _carouselOrder
-        .indexOf(widget.action)
-        .clamp(0, _carouselOrder.length - 1);
+    // Eligible pages only (ineligible ones never render, swipe or
+    // otherwise); land on the picked action.
+    _order = widget.actions.isEmpty ? _carouselOrder : widget.actions;
+    _index = _order.indexOf(widget.action).clamp(0, _order.length - 1);
     _pages = PageController(initialPage: _index);
   }
 
@@ -123,23 +130,23 @@ class _GrowthSheetState extends State<_GrowthSheet> {
             ),
             const SizedBox(height: 8),
             SizedBox(
-              height: 380,
+              height: 260,
               child: PageView.builder(
                 controller: _pages,
-                itemCount: _carouselOrder.length,
+                itemCount: _order.length,
                 onPageChanged: (i) {
                   AppHaptics.step();
                   setState(() => _index = i);
                 },
                 itemBuilder: (context, i) =>
-                    _GrowthCard(action: _carouselOrder[i]),
+                    _GrowthCard(action: _order[i]),
               ),
             ),
             const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                for (int i = 0; i < _carouselOrder.length; i++)
+                for (int i = 0; i < _order.length; i++)
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     margin: const EdgeInsets.symmetric(horizontal: 3),
@@ -154,39 +161,7 @@ class _GrowthSheetState extends State<_GrowthSheet> {
                   ),
               ],
             ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.white.withValues(alpha: 0.08),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-              child: const Text(
-                'Maybe later',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () async {
-                await GrowthService.snooze(days: 7);
-                if (context.mounted) Navigator.of(context).pop();
-              },
-              child: Text(
-                "Don't remind me for 7 days",
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.white.withValues(alpha: 0.5),
-                ),
-              ),
-            ),
+            // No buttons: dismiss via swipe-down or backdrop tap.
           ],
         ),
       ),

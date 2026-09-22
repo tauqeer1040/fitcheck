@@ -7,8 +7,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../models/outfit_sticker.dart';
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
+import '../services/roast_service.dart';
 import '../services/sticker_style_service.dart';
 import '../services/whatsapp_sticker_service.dart';
+import '../widgets/genie_flight.dart';
 import '../widgets/shaped_sticker.dart';
 
 /// Fullscreen sticker view: pure floating sticker on dark, no chrome.
@@ -33,40 +35,7 @@ class StickerDetailScreen extends StatefulWidget {
 
 class _StickerDetailScreenState extends State<StickerDetailScreen>
     with TickerProviderStateMixin {
-  /// Bottom-hint fun lines, same voice as the homescreen CTA. A fresh
-  /// one rolls on every fullscreen open.
-  static const List<String> _flickLines = [
-    'Flick it home.',
-    "Give it a flick. It knows the way.",
-    "Flick it. Gently. It's emotional.",
-    "Swipe it home before it gets comfortable.",
-    "Flick to keep. Or don't. It'll adapt.",
-    "One flick and this sticker is legally yours.",
-    "Flick it home. It misses the grid already.",
-    "Be honest: you're just flicking it to see it fly.",
-    "Flick it. This is the fun part.",
-    "That flick was mid. Try again after you keep it.",
-    "Flick it home before your camera roll sees this.",
-    "It's not clingy. It just wants to go home.",
-    "Flick it like it owes you money.",
-    "A gentle flick. This is a sticker, not a fly.",
-    "Flick to keep. We don't do refunds.",
-    "Home is where the grid is. Flick.",
-    "Flick it. The grid believes in you.",
-    "Don't overthink the flick. It never ends well.",
-    "This sticker survived your wardrobe. It can survive a flick.",
-    "Flick it home. The other stickers are watching.",
-  ];
-
-  /// Rolled once per state (i.e. per fullscreen open) so every visit
-  /// feels fresh.
-  late final int _flickIndex =
-      (DateTime.now().millisecondsSinceEpoch ^ widget.sticker.id.hashCode) %
-      _flickLines.length;
-
-  /// Drives the collapse-into-shape entrance: the art starts oversized
-  /// and shrinks into the sticker's solid silhouette, which springs in
-  /// beneath it with an overshoot pop.
+  /// Drives the collapse-into-shape entrance.
   late final AnimationController _openController;
 
   /// The sticker's stored shape — the single source of truth shared with
@@ -138,6 +107,18 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
               ),
             ),
           ),
+          // Tap anywhere (background layer, below the pills so their
+          // buttons win the arena) also dismisses home.
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                AppHaptics.tap();
+                Navigator.pop(context);
+              },
+              child: const SizedBox.expand(),
+            ),
+          ),
           // Layer 2 — the draggable sticker content, full-bleed.
           // DismissiblePage handles the gesture: 1:1 finger-follow in ANY
           // direction, scale-down + corner rounding while dragging,
@@ -149,6 +130,11 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
           Navigator.pop(context);
         },
         direction: DismissiblePageDismissDirection.multi,
+        // Hair-trigger: a slight flick clears the threshold and sends
+        // the sticker home.
+        dismissThresholds: const {
+          DismissiblePageDismissDirection.multi: 0.25,
+        },
         // Respect device padding (bottom hint sits above the home pill).
         isFullScreen: false,
         // Library veil: full-bleed dark tint that fades with the drag.
@@ -174,8 +160,17 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
                       // as the route fades in; the Hero keeps the jelly
                       // flight home. Same ShapedSticker structure as the
                       // grid cell, so both ends of the flight match.
-                      child: Hero(
+                      // Tap dismisses home (drag still flick-dismisses).
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () {
+                          AppHaptics.tap();
+                          Navigator.pop(context);
+                        },
+                        child: Hero(
                         tag: 'sticker-${widget.sticker.id}',
+                        // Curved arc home, matching the grid cell.
+                        createRectTween: stickerFlightTween,
                         child: AnimatedBuilder(
                           animation: _openController,
                           builder: (context, _) => ShapedSticker(
@@ -203,6 +198,7 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
                         ),
                       ),
                     ),
+                    ),
                     const SizedBox(height: 24),
                     Text(
                       'Added ${_formatDate(widget.sticker.createdAt)}',
@@ -214,67 +210,70 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
                 ),
               ),
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: sidePad.bottom + 32,
-              child: Center(
-                child: AppMotion.entrance(
-                  context,
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _flickLines[_flickIndex],
-                      style: const TextStyle(color: Colors.white),
-                    )
-                        .animate(key: ValueKey(_flickIndex))
-                        .fadeIn(
-                          duration: const Duration(milliseconds: 350),
-                          curve: Curves.easeOut,
-                        ),
-                  ),
-                ),
-              ),
-            ),
-            // Share button: frosted glass, white text, small icon, top-right corner
-            Positioned(
-              top: sidePad.top + 16,
-              right: 16,
-              child: AppMotion.entrance(
-                context,
-                GestureDetector(
-                  onTap: () {
-                    AppHaptics.tap();
-                    _addToWhatsApp(context);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        width: 1,
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.add_circle_outline,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          // (Flick hint + share button live in the static outer layer
+          // below so only the sticker rides the dismiss drag.)
           ],
         ),
         ),
         ),
+          // Static layer: roast pill, share button. Painted above
+          // the dismissible sticker so taps land here first, and none of
+          // it translates/scales with the drag.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: sidePad.bottom + 32,
+            child: Center(
+              child: AppMotion.entrance(
+                context,
+                _ToastPill(
+                  // Permanent joke: fixed salt 0 makes the roast a pure
+                  // function of the sticker — identical every open.
+                  child: Text(
+                    RoastService.roastFor(widget.sticker),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    textAlign: TextAlign.center,
+                  ).animate().fadeIn(
+                        duration: const Duration(milliseconds: 350),
+                        curve: Curves.easeOut,
+                      ),
+                ),
+              ),
+            ),
+          ),
+          // Share button: frosted glass, white text, small icon, top-right corner
+          Positioned(
+            top: sidePad.top + 16,
+            right: 16,
+            child: AppMotion.entrance(
+              context,
+              GestureDetector(
+                onTap: () {
+                  AppHaptics.tap();
+                  _addToWhatsApp(context);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.share_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+          ),
           ],
         ),
       ),
@@ -315,5 +314,27 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+}
+
+/// Frosted-glass pill for the fullscreen hints — the undo-delete toast
+/// recipe: σ20 blur, 0xFF3A3A3C at 72%, radius 20.
+class _ToastPill extends StatelessWidget {
+  final Widget child;
+  const _ToastPill({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          color: const Color(0xFF3A3A3C).withValues(alpha: 0.72),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: child,
+        ),
+      ),
+    );
   }
 }

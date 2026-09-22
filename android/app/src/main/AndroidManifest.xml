@@ -1,12 +1,36 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Android 13+ granular media permissions: declaring these is what lets
-         the OS show the runtime permission popup instead of denying silently. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Android 13+ granular media permissions: images only. Video is
+         intentionally omitted: the app never reads videos. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <!-- Pre-Android 13 fallback -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- Stripped: the merger auto-adds these for an ancient tflite GPU
+         manifest (targetSdk < 4) and for Firebase measurement. Nothing
+         in the app reads the phone state, writes shared storage, or
+         needs the Ad ID — Analytics works without it. -->
+    <uses-permission
+        android:name="android.permission.READ_PHONE_STATE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_ADSERVICES_AD_ID"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION"
+        tools:node="remove" />
+    <!-- Daily reminders survive reboot: the native alarm chain reseeds
+         itself on BOOT_COMPLETED / app update (no exact-alarm permission;
+         inexact allow-while-idle by design). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
         <!-- Single-image picking via photo picker (no runtime permission needed) -->
     <queries>
         <intent>
@@ -88,6 +112,20 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/latest_sticker_widget_info" />
+        </receiver>
+        <!-- Daily-reminder alarm target: manifest-declared so it fires
+             with a dead process. -->
+        <receiver
+            android:name=".ReminderReceiver"
+            android:exported="false" />
+        <!-- Re-seed the reminder chain after reboot / app update. -->
+        <receiver
+            android:name=".ReminderBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
         </receiver>
     </application>
     <!-- Required to query activities that can process text, see:

@@ -1,0 +1,2 @@
+json_key_file("fbm/stickerpants-play.json") # Play service-account key (gitignored); assumes fastlane runs from android/
+package_name("com.taucity.stickerpants")

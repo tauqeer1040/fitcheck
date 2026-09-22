@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single rotation frame for the widget silhouette flippers: the
+     provider stamps the pre-rendered bitmap on this ImageView and
+     addViews it into the flipper (avoids dozens of static views). -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_frame"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:scaleType="fitCenter"
+    android:contentDescription="@null" />

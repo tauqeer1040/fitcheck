@@ -8,6 +8,7 @@ import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -28,8 +29,8 @@ import '../widgets/genie_flight.dart';
 import '../widgets/shape_lab_sheet.dart';
 import '../widgets/sticker_grid.dart';
 import '../widgets/wordmark_shadow.dart';
-import 'photo_preview_screen.dart';
 import 'growth_prompt_sheet.dart';
+import 'max_thankyou_sheet.dart';
 import 'shape_demo_sheet.dart';
 import 'sticker_detail_screen.dart';
 
@@ -51,7 +52,8 @@ class GalleryScreen extends StatefulWidget {
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
 
-class _GalleryScreenState extends State<GalleryScreen> {
+class _GalleryScreenState extends State<GalleryScreen>
+    with WidgetsBindingObserver {
   List<OutfitSticker> _stickers = [];
   final _sheetKey = GlobalKey<GalleryBottomSheetState>();
   final _gridController = ScrollController();
@@ -150,10 +152,13 @@ class _GalleryScreenState extends State<GalleryScreen> {
       if (_justAddedId == removed.id) _justAddedId = null;
     });
     await _saveStickers();
-    // Park the PNG so Undo can bring it back byte-identical.
+    // Park the file so Undo can bring it back byte-identical. The trash
+    // keeps the sticker's own extension so .webp and legacy .png
+    // stickers stay distinguishable through delete/undo.
     try {
       final dir = await getTemporaryDirectory();
-      final trash = File('${dir.path}/trash_${removed.id}.png');
+      final ext = removed.imagePath.endsWith('.webp') ? '.webp' : '.png';
+      final trash = File('${dir.path}/trash_${removed.id}$ext');
       await File(removed.imagePath).rename(trash.path);
       _trashPath = trash.path;
     } catch (_) {
@@ -231,8 +236,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
     if (trashPath == null || trashed == null) return;
     try {
       final dir = await getApplicationDocumentsDirectory();
+      final ext = trashPath.endsWith('.webp') ? '.webp' : '.png';
       final restored = File(
-        '${dir.path}/fitcheck_${DateTime.now().millisecondsSinceEpoch}.png',
+        '${dir.path}/fitcheck_${DateTime.now().millisecondsSinceEpoch}$ext',
       );
       await File(trashPath).rename(restored.path);
       final sticker = OutfitSticker(
@@ -265,6 +271,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    RevenueCatService.instance
+        .removeListener(_onCustomerInfoForWordmark);
     _gridController.dispose();
     _confettiPop.dispose();
     super.dispose();
@@ -273,8 +282,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _confettiPop =
         ConfettiController(duration: const Duration(milliseconds: 1050));
+    // Max wordmark reactivity: boot-as-Pro, post-purchase, expiry and
+    // resume refresh all flow through CustomerInfo updates.
+    RevenueCatService.instance.addListener(_onCustomerInfoForWordmark);
     _boot();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -285,6 +298,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
   Future<void> _boot() async {
     await _loadStickers();
     await _loadShapeBgFlag();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _m3Thumbs = prefs.getBool('m3_thumbs') ?? false;
+    } catch (_) {}
     if (mounted) setState(() {});
     await _migrateLegacy();
     // One-shot soft paywall on first gallery entry (post-onboarding).
@@ -301,6 +318,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
         );
       }
     }
+    // Existing Max users who never saw the thank-you (subscribed
+    // before it existed, or via restore): one welcome-back sheet,
+    // once ever. The sheet marks itself seen on dismiss.
+    try {
+      await RevenueCatService.instance.ensureInitialized();
+      final prefs = await SharedPreferences.getInstance();
+      final seen = prefs.getBool('max_thankyou_seen') ?? false;
+      if (!seen && RevenueCatService.instance.isPro && mounted) {
+        await MaxThankYouSheet.show(context, restored: true);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadShapeBgFlag() async {
@@ -348,28 +376,42 @@ class _GalleryScreenState extends State<GalleryScreen> {
   /// No count/throttle/snooze gates — the user asked for it.
   Future<void> _openSupportSheet() async {
     if (!mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    // Same rotation cursor as the automatic triggers (no throttle
+    // here): every manual open advances to the next eligible page,
+    // so debug launches alternate too.
+    final eligible = await GrowthService.eligibleActions();
+    final action = await GrowthService.pickNext(eligible);
+    if (action == null || !mounted) return;
+    await showGrowthPromptSheet(context, action, actions: eligible);
+  }
 
-    // Eligible actions in rotation order; reminders joins the front
-    // until the notification permission is granted.
-    final actions = <GrowthAction>[
-      GrowthAction.review,
-      GrowthAction.share,
-      GrowthAction.widgets,
-    ];
-    try {
-      if (!await NotificationService.areEnabled()) {
-        actions.insert(0, GrowthAction.reminders);
-      }
-    } catch (_) {}
+  void _onCustomerInfoForWordmark(CustomerInfo _) {
+    // Entitlement flips (subscribe / restore / expiry / resume) swap
+    // the wordmark between Max and standard art.
+    if (mounted) setState(() {});
+  }
 
-    final step = prefs.getInt('support_manual_rotation') ?? 0;
-    await prefs.setInt('support_manual_rotation', step + 1);
-    final action = actions[step % actions.length];
+  /// Max subscribers get the Max lockup everywhere the wordmark shows.
+  String get _wordmarkAsset =>
+      RevenueCatService.instance.isPro
+          ? 'assets/stickerpantsmax.webp'
+          : 'assets/stickerpants.webp';
 
-    if (!mounted) return;
-    await showGrowthPromptSheet(context, action);
+  /// Max lockup stands alone — the pants logo hides wherever it shows.
+  /// Sticky state (not strict entitlement): offline/cold starts keep
+  /// painting Max until a definitive update says otherwise.
+  bool get _isMax => RevenueCatService.instance.isProSticky;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Resume refresh: a purchase, restore, expiry or cancellation that
+    // happened elsewhere reconciles the moment we're foregrounded.
+    if (state == AppLifecycleState.resumed) {
+      unawaited(() async {
+        await RevenueCatService.instance.refreshCustomerInfo();
+        if (mounted) setState(() {});
+      }());
+    }
   }
 
   void _toggleShapeBg() {
@@ -380,6 +422,43 @@ class _GalleryScreenState extends State<GalleryScreen> {
       _indicatorColorIndex++;
     });
     _persistShapeBg();
+    // Wordmark color drives the homescreen widget backdrop too — every
+    // toggle re-tints the cookie behind the stickers.
+    unawaited(WidgetService.updateAll(bgColor: _indicatorColor));
+  }
+
+  /// Fire-now (debug card): post the morning/night copy immediately —
+  /// proves display + permission + channel without waiting for a slot.
+  Future<void> _toggleNotif(String type) async {
+    AppHaptics.tap();
+    final which = type == 'fire_night' ? 'night' : 'morning';
+    final enabled = await NotificationService.areEnabled();
+    final granted =
+        enabled || await NotificationService.requestPermissions();
+    if (!granted) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enable notifications in Settings first'),
+        ),
+      );
+      return;
+    }
+    await NotificationService.fireNow(which);
+  }
+
+  /// Sheet thumbnail style (debug card toggle, persisted):
+  /// M3 expressive shapes vs plain rounded squares.
+  bool _m3Thumbs = false;
+
+  Future<void> _toggleM3Thumbs(bool on) async {
+    AppHaptics.tap();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('m3_thumbs', on);
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _m3Thumbs = on);
   }
 
   /// Appbar Pro button: launches the paywall on demand (manual
@@ -457,19 +536,24 @@ class _GalleryScreenState extends State<GalleryScreen> {
     await metaFile.writeAsString(json);
   }
 
-  Future<void> _onGalleryPick(AssetEntity asset) async {
-    // Free-tier gate: 30 free stickers, then the locked paywall.
-    // Pro users and users inside quota pass straight through.
+  /// Free-tier gate: 30 free stickers, then the locked paywall.
+  /// Pro users and users inside quota pass straight through.
+  Future<bool> _passesCreateGate() async {
     await RevenueCatService.instance.ensureInitialized();
     if (!await ProAccessService.canCreateFree()) {
-      if (!mounted) return;
+      if (!mounted) return false;
       final unlocked = await MomentPaywallService.maybeShow(
         context,
         placement: 'create_gate',
         locked: true,
       );
-      if (!unlocked) return;
+      if (!unlocked) return false;
     }
+    return true;
+  }
+
+  Future<void> _onGalleryPick(AssetEntity asset) async {
+    if (!await _passesCreateGate()) return;
     String? pickedPath;
     try {
       // Preferred: read the original bytes and write a fresh temp file.
@@ -493,41 +577,27 @@ class _GalleryScreenState extends State<GalleryScreen> {
     }
     if (pickedPath == null || !mounted) return;
     final imagePath = pickedPath;
-
-    // Id is minted upfront so the preview and the future grid cell share
-    // one Hero tag for the genie flight home. The shape is rolled from
-    // the photo's asset id — the same shape its sheet thumbnail shows.
+    // Id minted upfront so the preview and the future grid cell share
+    // one Hero tag for the genie flight home. Shape rolls from the
+    // asset id — the same seed its sheet thumbnail shows.
     final stickerId = const Uuid().v4();
-    final heroTag = 'sticker-$stickerId';
-    final shapeIndex = randomShapeIndexForAsset(asset.id);
-
-    final saved = await Navigator.push<(String?, StickerStyle)>(
-      context,
-      zoomPageRoute<(String?, StickerStyle)>(
-        page: PhotoPreviewScreen(
-          imagePath: imagePath,
-          heroTag: heroTag,
-          initialShapeIndex: shapeIndex,
-          // Insert the cell while the preview is still up so the Hero
-          // destination exists when the pop flight begins.
-          onSaved: (path, style) => _insertSticker(stickerId, path, style),
-        ),
+    // Warm the image cache so the container-transform flight isn't
+    // swallowed by first-frame decode.
+    try {
+      await precacheImage(FileImage(File(imagePath)), context);
+    } catch (_) {}
+    if (!mounted) return;
+    // The sheet's OpenContainer performs the app-launch-style open:
+    // thumbnail blob expands into the fullscreen (closed→open morph).
+    _sheetKey.currentState?.openPreview(
+      GalleryPickData(
+        assetId: asset.id,
+        imagePath: imagePath,
+        heroTag: 'sticker-$stickerId',
+        shapeIndex: randomShapeIndexForAsset(asset.id),
+        onSaved: (path, style) => _insertSticker(stickerId, path, style),
       ),
     );
-    // Normally already inserted via onSaved; this is just a safety net.
-    final savedPath = saved?.$1;
-    if (savedPath != null &&
-        !_stickers.any((s) => s.imagePath == savedPath)) {
-      await _insertSticker(
-        const Uuid().v4(),
-        savedPath,
-        saved?.$2 ??
-            StickerStyle(
-              dominantColor: kFallbackStickerColor,
-              shapeIndex: shapeIndex,
-            ),
-      );
-    }
   }
 
   /// Inserts the sticker at the top and scrolls it into view for landing.
@@ -569,7 +639,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
     // Growth loop: widgets refresh every save; the suggestion sheet
     // (review/share/widget prompt) fires on the 1st + every 5th save,
     // 5s after touchdown.
-    unawaited(WidgetService.updateAll());
+    unawaited(WidgetService.updateAll(bgColor: _indicatorColor));
     if (mounted) {
       unawaited(GrowthService.onStickerAdded(context));
     }
@@ -634,19 +704,22 @@ class _GalleryScreenState extends State<GalleryScreen> {
         toolbarHeight: 80,
         title: Row(
           children: [
-            // Transparent logo, no chip behind it.
-            SizedBox(
-              width: 64,
-              height: 64,
-              child: Image.asset(
-                'assets/logo3.png',
-                fit: BoxFit.contain,
+            // Transparent logo, no chip behind it. Hidden for Max —
+            // the lockup stands alone.
+            if (!_isMax) ...[
+              SizedBox(
+                width: 64,
+                height: 64,
+                child: Image.asset(
+                  'assets/logo3.png',
+                  fit: BoxFit.contain,
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            // StickerPants wordmark (2:1): tap toggles the M3 cell
-            // backdrops. The shadow indicator behind it shows state —
-            // same height, narrower, centered — cycling shape each tap.
+              const SizedBox(width: 12),
+            ],
+            // Wordmark (Max lockup for subscribers): tap toggles the
+            // M3 cell backdrops. The shadow indicator behind it shows
+            // state — cycling shape each tap.
             GestureDetector(
               onTap: _toggleShapeBg,
               onLongPress: _openShapeLab,
@@ -661,10 +734,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
                       shape: kStyleShapes[_indicatorShape
                           .clamp(0, kStyleShapes.length - 1)],
                       color: _indicatorColor,
+                      // Max lockup is wider: fixed 65% shadow width.
+                      widthRatio: _isMax ? 0.65 : 1.0,
                     ),
                   ),
                   Image.asset(
-                    'assets/stickerpants.png',
+                    _wordmarkAsset,
                     height: 57,
                     fit: BoxFit.contain,
                   ),
@@ -673,37 +748,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
             ),
           ],
         ),        actions: [
-          // Support StickerPants: opens the growth sheet on demand —
-          // review, share, widgets, or reminders (no throttle, so it's
-          // always available from here; snooze does not apply either,
-          // because the user asked for it themselves).
-          IconButton(
-            tooltip: 'Support StickerPants',
-            onPressed: _openSupportSheet,
-            icon: const Icon(
-              Icons.favorite_border_rounded,
-              color: NotesColors.text,
-            ),
-          ),
-          // Shape demo: endless M3E morph + rotation overlay.
-          IconButton(
-            tooltip: 'Shape demo',
-            onPressed: () => showShapeDemo(context),
-            icon: const Icon(
-              Icons.auto_awesome_outlined,
-              color: NotesColors.text,
-            ),
-          ),
-          // Pro: paywall on demand (Customer Center when subscribed).
-          IconButton(
-            tooltip: 'StickerPants Pro',
-            onPressed: _openPro,
-            icon: const Icon(
-              Icons.workspace_premium_outlined,
-              color: NotesColors.yellow,
-            ),
-          ),
-          // iOS-style Done exits delete mode.
+          // Everything else lives in the empty-state debug card
+          // (logo + wordmark stay here). Done exits delete mode.
           if (_jiggling)
             TextButton(
               onPressed: _exitJiggle,
@@ -735,6 +781,16 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 shapeBg: _shapeBgOn,
                 indicatorShape: _indicatorShape,
                 onToggleShapeBg: _toggleShapeBg,
+                isMax: _isMax,
+                onSupportSheet: _openSupportSheet,
+                onShapeDemo: () =>
+                    showShapeDemo(context, bgColor: _indicatorColor),
+                onPro: _openPro,
+                onPreviewSheets: () =>
+                    MaxThankYouSheet.showPreviewPicker(context),
+                onToggleNotif: _toggleNotif,
+                m3Thumbs: _m3Thumbs,
+                onToggleM3Thumbs: _toggleM3Thumbs,
                 indicatorColor: _indicatorColor,
                 shapeScale: 1.0,
                 markScale: _markScale,
@@ -765,7 +821,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
               onTap: () {
                 if (_jiggling) _exitJiggle();
               },
-              child: GalleryBottomSheet(key: _sheetKey, onPick: _onGalleryPick),
+              child: GalleryBottomSheet(
+                key: _sheetKey,
+                onPick: _onGalleryPick,
+                m3Thumbs: _m3Thumbs,
+              ),
             ),
           ),
           // One big explosive pop from the landing sticker's own spot, in

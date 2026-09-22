@@ -100,4 +100,6 @@ class AnalyticsService {
     if (productId != null) params['product_id'] = productId;
     _safe('purchase_completed', params);
   }
+  void logMaxThankYouShown({required bool restored}) =>
+      _safe('max_thankyou_shown', {'restored': restored});
 }

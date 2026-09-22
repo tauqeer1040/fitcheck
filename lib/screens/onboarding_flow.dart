@@ -65,7 +65,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // no custom pre-dialog. Denials are handled later at the gallery
     // sheet (rationale + Settings deep-link).
     try {
-      await PhotoManager.requestPermissionExtend();
+      await PhotoManager.requestPermissionExtend(
+        requestOption: const PermissionRequestOption(
+          androidPermission: AndroidPermission(
+            type: RequestType.image,
+            mediaLocation: false,
+          ),
+        ),
+      );
     } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('onboarding_completed_v1', true);

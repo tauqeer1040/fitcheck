@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
@@ -35,6 +37,15 @@ class RevenueCatService {
   CustomerInfo? _cachedCustomerInfo;
   CustomerInfo? get cachedCustomerInfo => _cachedCustomerInfo;
 
+  /// Last DEFINITIVE Pro state, persisted. CustomerInfo reads can come
+  /// back empty (offline launch, slow network) even for subscribers —
+  /// without this the Max wordmark flops back to standard every cold
+  /// start and only recovers when a listener fires. Sticky bit paints
+  /// instantly; every real update below overwrites it, so expiry and
+  /// cancellation still converge (never the reverse).
+  static const String _proCacheKey = 'max_cached_pro';
+  bool _lastKnownPro = false;
+
   bool _initialized = false;
   bool get isInitialized => _initialized;
   bool _initializing = false;
@@ -61,6 +72,12 @@ class RevenueCatService {
     if (_initialized || _initializing) return;
     _initializing = true;
     try {
+      // Sticky bit first: paints Max instantly on cold start, before
+      // any network runs.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        _lastKnownPro = prefs.getBool(_proCacheKey) ?? false;
+      } catch (_) {}
       final apiKey = const String.fromEnvironment('REVENUECAT_API_KEY');
       final effectiveKey =
           apiKey.isNotEmpty ? apiKey : _defaultApiKey;
@@ -72,7 +89,7 @@ class RevenueCatService {
       await Purchases.configure(PurchasesConfiguration(effectiveKey));
       Purchases.addCustomerInfoUpdateListener(_onCustomerInfoUpdated);
       try {
-        _cachedCustomerInfo = await Purchases.getCustomerInfo();
+        _onCustomerInfoUpdated(await Purchases.getCustomerInfo());
       } catch (e) {
         // Invalid key: backend 401s every call. Stay "initialized" so
         // cached/offline reads still work, but flag auth invalid so
@@ -106,6 +123,16 @@ class RevenueCatService {
 
   void _onCustomerInfoUpdated(CustomerInfo info) {
     _cachedCustomerInfo = info;
+    // Single choke point: every definitive update persists the sticky
+    // bit (fire-and-forget) and fans out to listeners.
+    _lastKnownPro =
+        info.entitlements.all[entitlementId]?.isActive ?? false;
+    unawaited(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_proCacheKey, _lastKnownPro);
+      } catch (_) {}
+    }());
     for (final listener in _listeners) {
       listener(info);
     }
@@ -114,6 +141,11 @@ class RevenueCatService {
   /// True when the user holds the Pro entitlement.
   bool get isPro =>
       _cachedCustomerInfo?.entitlements.all[entitlementId]?.isActive ?? false;
+
+  /// UI-facing Max state: live entitlement OR last definitive state.
+  /// Gates (quota, paywalls) keep using strict [isPro]; the wordmark
+  /// uses this so offline/cold starts don't flop back to standard.
+  bool get isProSticky => isPro || _lastKnownPro;
 
   /// Listen once: fires immediately with cached state, then on changes.
   Future<void> onProChanged(void Function(bool isPro) callback) async {
@@ -131,6 +163,7 @@ class RevenueCatService {
       final result = await Purchases.purchase(
         PurchaseParams.package(package),
       );
+      _onCustomerInfoUpdated(result.customerInfo);
       final ent =
           result.customerInfo.entitlements.all[entitlementId];
       final active = ent?.isActive ?? false;
@@ -153,6 +186,7 @@ class RevenueCatService {
   Future<bool> restore() async {
     try {
       final info = await Purchases.restorePurchases();
+      _onCustomerInfoUpdated(info);
       return info.entitlements.all[entitlementId]?.isActive ?? false;
     } catch (_) {
       return false;
@@ -182,7 +216,7 @@ class RevenueCatService {
   Future<void> refreshCustomerInfo() async {
     try {
       await ensureInitialized();
-      _cachedCustomerInfo = await Purchases.getCustomerInfo();
+      _onCustomerInfoUpdated(await Purchases.getCustomerInfo());
     } catch (_) {}
   }
 

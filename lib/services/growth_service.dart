@@ -24,13 +24,14 @@ class GrowthService {
 
   static const _countKey = 'growth_sticker_count';
   static const _lastShownMs = 'growth_sheet_last_shown_ms';
-  static const _nextAction = 'growth_next_action';
+  static const _lastShownAction = 'growth_last_shown_action';
   static const _reviewOfferedVersion = 'growth_review_offered_version';
   static const _reviewHighRating = 'growth_review_high_rating';
   static const _reviewLowRatingUntilMs = 'growth_review_low_rating_until_ms';
   static const _snoozeUntilMs = 'growth_snooze_until_ms';
   static const _shareCount = 'growth_share_count';
   static const _shareWindowStartMs = 'growth_share_window_start_ms';
+  static const _widgetsAdded = 'growth_widgets_added';
 
   static const throttle = Duration(hours: 24);
   static const lowRatingSuppress = Duration(days: 30);
@@ -60,69 +61,91 @@ class GrowthService {
     if (!context.mounted) return;
     final sheetContext = context;
 
-    final action = await _pickAction(prefs, isFirst);
+    // Snapshot eligibility BEFORE picking: picking marks review as
+    // offered (dropping it from later snapshots), but the carousel
+    // must still contain the landed page.
+    final eligible = await eligibleActions();
+    final action = await pickNext(eligible);
     if (action == null) return;
     if (!sheetContext.mounted) return;
 
-    await showGrowthPromptSheet(sheetContext, action);
+    await showGrowthPromptSheet(
+      sheetContext,
+      action,
+      actions: eligible,
+    );
   }
 
-  /// Rotation: reminders first (the app's core loop needs the permission),
-  /// then share, then widgets; review only when this version hasn't been
-  /// asked, the user hasn't self-reported 4-5 stars, and no 30-day
-  /// low-rating suppression is active. Actions that render as no-ops are
-  /// skipped.
-  static Future<GrowthAction?> _pickAction(
-    SharedPreferences prefs,
-    bool isFirst,
-  ) async {
-    if (await isSnoozed(prefs)) return null;
+  /// Eligible carousel pages right now, in display order:
+  /// - review: unless self-reported 4-5 stars (store flow shown),
+  ///   30-day low-rating suppression, or already offered this version.
+  ///   (The API can't confirm an actual Play rating — tapping through
+  ///   the store flow counts as rated.)
+  /// - reminders: unless notifications already granted.
+  /// - widgets: unless the user already pinned them.
+  /// - share: always (the sink — something is always eligible).
+  static Future<List<GrowthAction>> eligibleActions() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (await isSnoozed(prefs)) return [];
+
+    final out = <GrowthAction>[];
 
     final lowUntil = prefs.getInt(_reviewLowRatingUntilMs) ?? 0;
     final reviewAllowed = DateTime.now().millisecondsSinceEpoch > lowUntil &&
         !(prefs.getBool(_reviewHighRating) ?? false);
-
-    // Sticky pick: reuse the queued action across eligible saves so each
-    // gets a fair turn before rotation advances.
-    final next = prefs.getString(_nextAction);
-    if (next != null) {
-      final queued = GrowthAction.values
-          .where((a) => a.name == next)
-          .cast<GrowthAction?>()
-          .firstOrNull;
-      if (queued != null && !(queued == GrowthAction.review && !reviewAllowed)) {
-        await prefs.remove(_nextAction);
-        return queued;
-      }
-    }
-
-    // Reminders first if not yet granted (self-hides if granted).
-    if (isFirst) {
-      try {
-        if (!await NotificationService.areEnabled()) {
-          return GrowthAction.reminders;
-        }
-      } catch (_) {}
-    }
-
-    // Review gate.
     if (reviewAllowed) {
       final version = await _currentVersion();
-      final offered = prefs.getString(_reviewOfferedVersion);
-      if (offered != version) {
-        await prefs.setString(_reviewOfferedVersion, version);
-        return GrowthAction.review;
+      if (prefs.getString(_reviewOfferedVersion) != version) {
+        out.add(GrowthAction.review);
       }
     }
 
-    // Share / widgets rotate.
-    final last = prefs.getString('growth_last_rotating');
-    if (last == GrowthAction.share.name) {
-      await prefs.setString('growth_last_rotating', GrowthAction.widgets.name);
-      return GrowthAction.widgets;
+    try {
+      if (!await NotificationService.areEnabled()) {
+        out.add(GrowthAction.reminders);
+      }
+    } catch (_) {}
+
+    if (!(prefs.getBool(_widgetsAdded) ?? false)) {
+      out.add(GrowthAction.widgets);
     }
-    await prefs.setString('growth_last_rotating', GrowthAction.share.name);
-    return GrowthAction.share;
+
+    out.add(GrowthAction.share);
+
+    // Carousel display order matches the sheet's canonical order.
+    const order = [
+      GrowthAction.review,
+      GrowthAction.share,
+      GrowthAction.widgets,
+      GrowthAction.reminders,
+    ];
+    out.sort((a, b) => order.indexOf(a).compareTo(order.indexOf(b)));
+    return out;
+  }
+
+  /// Picks the landing page from [eligible] and advances the cursor:
+  /// never repeats the last-shown page while alternatives exist (a
+  /// seen-but-dismissed review counts as shown — next time lands on
+  /// share). Single eligible page repeats by necessity. Also stamps
+  /// the review as offered for this version when picked.
+  static Future<GrowthAction?> pickNext(
+    List<GrowthAction> eligible,
+  ) async {
+    if (eligible.isEmpty) return null;
+    final prefs = await SharedPreferences.getInstance();
+    final last = prefs.getString(_lastShownAction);
+    final pick = eligible.firstWhere(
+      (a) => a.name != last,
+      orElse: () => eligible.first,
+    );
+    if (pick == GrowthAction.review) {
+      await prefs.setString(
+        _reviewOfferedVersion,
+        await _currentVersion(),
+      );
+    }
+    await prefs.setString(_lastShownAction, pick.name);
+    return pick;
   }
 
   static Future<bool> isSnoozed([SharedPreferences? provided]) async {
@@ -184,12 +207,17 @@ class GrowthService {
   }
 
   /// Guides the user to the widget picker (Android 8+ opens the widget
-  /// list pre-filtered to this app's widgets).
+  /// list pre-filtered to this app's widgets). Records the prompt so
+  /// the widgets card leaves the rotation once asked.
   static Future<void> pinWidgets() async {
     try {
       await HomeWidget.requestPinWidget(
         androidName: 'RecentStickersWidgetProvider',
       );
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_widgetsAdded, true);
     } catch (_) {}
   }
 }

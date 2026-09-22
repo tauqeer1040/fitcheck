@@ -11,6 +11,7 @@ import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
 import '../services/sticker_style_service.dart';
 import 'genie_flight.dart';
+import 'morphing_shape_clip.dart';
 import 'shaped_sticker.dart';
 
 /// Homescreen sticker board: stickers sit in aligned rows (max [maxColumns]
@@ -59,6 +60,23 @@ class StickerGrid extends StatefulWidget {
   /// toggle as the appbar wordmark).
   final VoidCallback? onToggleShapeBg;
 
+  /// Max subscribers see the Max lockup in the empty state.
+  final bool isMax;
+
+  /// Debug card actions (everything that lived in the appbar).
+  final VoidCallback? onSupportSheet;
+  final VoidCallback? onShapeDemo;
+  final VoidCallback? onPro;
+  final VoidCallback? onPreviewSheets;
+
+  /// Per-type notification state + toggle (debug card).
+  final ValueChanged<String>? onToggleNotif;
+
+  /// Sheet thumbnail style (debug card): M3 expressive shapes vs
+  /// plain rounded squares.
+  final bool m3Thumbs;
+  final ValueChanged<bool>? onToggleM3Thumbs;
+
   /// Index into kStyleShapes for the wordmark shadow indicator.
   final int indicatorShape;
 
@@ -83,6 +101,14 @@ class StickerGrid extends StatefulWidget {
     this.shapeBg = true,
     this.indicatorShape = 7,
     this.onToggleShapeBg,
+    this.isMax = false,
+    this.onSupportSheet,
+    this.onShapeDemo,
+    this.onPro,
+    this.onPreviewSheets,
+    this.onToggleNotif,
+    this.m3Thumbs = false,
+    this.onToggleM3Thumbs,
     this.indicatorColor = 0xFFFFD60A,
     this.markScale = 1.0,
     this.shapeScale = 0.7,
@@ -149,15 +175,27 @@ class _StickerGridState extends State<StickerGrid>
     duration: const Duration(milliseconds: 600),
   );
 
-  /// Slow hover for the empty-state wordmark: gentle ±6px float.
-  late final AnimationController _hover = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 3),
-  )..repeat(reverse: true);
-
   void _bounceArrow() {
     AppHaptics.tap();
     _arrowWobble.forward(from: 0);
+  }
+
+  /// Debug: fullscreen toggle of the pre-cutout sim — same widget,
+  /// large, on plain dark. Tap anywhere to come back.
+  void _openPreCutoutSim(BuildContext context) {
+    AppHaptics.tap();
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        transitionDuration: const Duration(milliseconds: 250),
+        reverseTransitionDuration: const Duration(milliseconds: 200),
+        pageBuilder: (_, animation, _) => FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: const _PreCutoutSimScreen(),
+        ),
+      ),
+    );
   }
 
   /// Live pinch preview: rubber-banded scale + focal anchor. Springs back
@@ -223,7 +261,6 @@ class _StickerGridState extends State<StickerGrid>
   @override
   void dispose() {
     _arrowWobble.dispose();
-    _hover.dispose();
     _jiggle.dispose();
     _settle.dispose();
     super.dispose();
@@ -354,7 +391,9 @@ class _StickerGridState extends State<StickerGrid>
   }
 
   /// Logo + wordmark + rotating fun CTA + big arrow pointing at the
-  /// sheet below. Any tap on the empty state spins a new line.
+  /// sheet below. Any tap on the empty state spins a new line; picks
+  /// happen straight from the sheet thumbnails (the arrow's own tap
+  /// just bounces).
   Widget _buildEmptyState() {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -362,51 +401,48 @@ class _StickerGridState extends State<StickerGrid>
       child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Image.asset(
-          'assets/logo3.png',
-          width: 160,
-          fit: BoxFit.contain,
-        ),
-        const SizedBox(height: 8),
-        // Wordmark with the shape-toggle shadow indicator behind it:
-        // same height as the image, narrower, centered. Hidden when
-        // the cell backdrops are off. Taps toggle like the appbar
-        // wordmark; the whole lockup hovers slowly.
+        // Max lockup stands alone — no logo above it.
+        if (!widget.isMax) ...[
+          Image.asset(
+            'assets/logo3.png',
+            width: 160,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(height: 8),
+        ],
+        // Wordmark with the shape-toggle shadow indicator behind
+        // it: square shadow the same height as the image,
+        // centered. Hidden when the cell backdrops are off.
+        // Taps toggle like the appbar wordmark.
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
             AppHaptics.tap();
             widget.onToggleShapeBg?.call();
           },
-          child: AnimatedBuilder(
-            animation: _hover,
-            builder: (context, child) {
-              final dy = math.sin(_hover.value * math.pi * 2) * 6.0;
-              return Transform.translate(
-                offset: Offset(0, dy),
-                child: child,
-              );
-            },
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                AnimatedOpacity(
-                  opacity: widget.shapeBg ? 1.0 : 0.0,
-                  duration: AppMotion.standard,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              AnimatedOpacity(
+                opacity: widget.shapeBg ? 1.0 : 0.0,
+                duration: AppMotion.standard,
                   child: WordmarkShadow(
                     height: 90 * widget.markScale,
                     shape: kStyleShapes[widget.indicatorShape
                         .clamp(0, kStyleShapes.length - 1)],
                     color: widget.indicatorColor,
+                    // Max lockup is wider: fixed 65% shadow width.
+                    widthRatio: widget.isMax ? 0.65 : 1.0,
                   ),
-                ),
+              ),
                 Image.asset(
-                  'assets/stickerpants.png',
+                  widget.isMax
+                      ? 'assets/stickerpantsmax.webp'
+                      : 'assets/stickerpants.webp',
                   width: 180,
                   fit: BoxFit.contain,
                 ),
-              ],
-            ),
+            ],
           ),
         ),
         const SizedBox(height: 8),
@@ -436,11 +472,154 @@ class _StickerGridState extends State<StickerGrid>
                 return Transform.scale(scale: s, child: child);
               },
               child: Image.asset(
-                'assets/arrow2.png',
+                'assets/arrow2.webp',
                 height: _arrowHeight,
                 fit: BoxFit.contain,
               ),
             ),
+          ),
+        ),
+        // Debug card: everything that lived in the appbar (support,
+        // shape demo, pro, sheet previews) plus per-type notification
+        // toggles. Empty state only — the appbar keeps logo + wordmark.
+        Container(
+          margin: const EdgeInsets.only(top: 16),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2C2C2E),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'DEBUG',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 2,
+                children: [
+                  _DebugBtn(
+                    icon: Icons.favorite_border_rounded,
+                    label: 'Support',
+                    onTap: widget.onSupportSheet,
+                  ),
+                  _DebugBtn(
+                    icon: Icons.auto_awesome_outlined,
+                    label: 'Shapes',
+                    onTap: widget.onShapeDemo,
+                  ),
+                  _DebugBtn(
+                    icon: Icons.workspace_premium_outlined,
+                    label: 'Pro',
+                    onTap: widget.onPro,
+                  ),
+                  _DebugBtn(
+                    icon: Icons.card_giftcard_rounded,
+                    label: 'Thanks',
+                    onTap: widget.onPreviewSheets,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // Fire-now: post the real notification immediately —
+              // proves display + permission + channel without waiting
+              // for a wall-clock slot.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _DebugBtn(
+                    icon: Icons.play_arrow_rounded,
+                    label: 'Fire AM',
+                    onTap: () =>
+                        widget.onToggleNotif?.call('fire_morning'),
+                  ),
+                  _DebugBtn(
+                    icon: Icons.play_arrow_rounded,
+                    label: 'Fire PM',
+                    onTap: () =>
+                        widget.onToggleNotif?.call('fire_night'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Sheet thumbnail style: M3 expressive vs rounded squares.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'M3 thumbs',
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                  Switch(
+                    value: widget.m3Thumbs,
+                    activeThumbColor: const Color(0xFFFFD60A),
+                    onChanged: widget.onToggleM3Thumbs,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Live sample of the fullscreen spinner: square
+              // width-driven silhouette box, rotating — check for
+              // top/bottom cutoff here.
+              ShapedSticker(
+                imagePath: 'assets/logo3.png',
+                shapeIndex: widget.indicatorShape,
+                dominantColor: widget.indicatorColor,
+                width: 110,
+                height: 110,
+                shapeScale: 1.0,
+                cardScale: 1.0,
+                rotateSilhouette: true,
+                rotationPeriod: const Duration(seconds: 6),
+              ),
+              const SizedBox(height: 8),
+              // Pre-cutout sim: exactly what the photo looks like inside
+              // the rotating shape while ML runs (static image, morphing
+              // outline, no shrink). Tap toggles it fullscreen.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openPreCutoutSim(context),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'PRE-CUTOUT (tap)',
+                      style: TextStyle(
+                        color:
+                            Colors.white.withValues(alpha: 0.35),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: 110,
+                      height: 110,
+                      child: MorphingShapeClip(
+                        endScale: 1.0,
+                        child: Image.asset(
+                          'assets/logo3.png',
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.high,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -598,6 +777,9 @@ class _StickerCell extends StatelessWidget {  final OutfitSticker sticker;
       // cutout overflowing it (Pixel "Shape" style). Off: bare cutout.
       child: Hero(
         tag: 'sticker-${sticker.id}',
+        // Curved arc instead of the linear default — see
+        // stickerFlightTween. Set on both ends of every flight.
+        createRectTween: stickerFlightTween,
         child: shapeBg
             ? ShapedSticker(
                 imagePath: sticker.imagePath,
@@ -760,4 +942,66 @@ class _LandingPopState extends State<_LandingPop> {
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+/// Fullscreen pre-cutout sim (debug): the processing visual large —
+/// static photo inside the morphing/rotating outline, no shrink.
+/// Tap anywhere to pop back to the grid.
+class _PreCutoutSimScreen extends StatelessWidget {
+  const _PreCutoutSimScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final side = MediaQuery.of(context).size;
+    final box = (side.width < side.height ? side.width : side.height) * 0.72;
+    return Scaffold(
+      backgroundColor: const Color(0xFF1C1C1E),
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).pop(),
+        child: Center(
+          child: SizedBox(
+            width: box,
+            height: box,
+            child: MorphingShapeClip(
+              endScale: 1.0,
+              child: Image.asset(
+                'assets/logo3.png',
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact debug-card button (empty state): yellow icon + white label.
+class _DebugBtn extends StatelessWidget {  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  const _DebugBtn({
+    required this.icon,
+    required this.label,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(icon, size: 16, color: const Color(0xFFFFD60A)),
+      label: Text(
+        label,
+        style: const TextStyle(color: Colors.white, fontSize: 12),
+      ),
+    );
+  }
 }
