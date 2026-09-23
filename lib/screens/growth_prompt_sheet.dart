@@ -18,7 +18,10 @@ enum GrowthAction { review, share, widgets, reminders }
 const playStoreUrl =
     'https://play.google.com/store/apps/details?id=com.taucity.stickerpants';
 
-Future<void> showGrowthPromptSheet(
+/// Returns true only when the sheet actually presented. [GrowthService]
+/// uses that to decide whether the ask is spent — a request that never
+/// reached the screen must not burn its turn.
+Future<bool> showGrowthPromptSheet(
   BuildContext context,
   GrowthAction action, {
   List<GrowthAction>? actions,
@@ -26,10 +29,10 @@ Future<void> showGrowthPromptSheet(
   // Reminders action never renders when already granted — no mute UI.
   if (action == GrowthAction.reminders) {
     try {
-      if (await NotificationService.areEnabled()) return;
+      if (await NotificationService.areEnabled()) return false;
     } catch (_) {}
   }
-  if (!context.mounted) return;
+  if (!context.mounted) return false;
   HapticFeedback.lightImpact();
   await showModalBottomSheet(
     context: context,
@@ -42,6 +45,7 @@ Future<void> showGrowthPromptSheet(
       ),
     ),
   );
+  return true;
 }
 
 /// Frosted-glass sheet body — the app's glass language (same recipe as

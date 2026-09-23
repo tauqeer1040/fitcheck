@@ -96,4 +96,22 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
     }
+
+    // WhatsApp confirms ENABLE_STICKER_PACK one pack at a time, so a library
+    // larger than the 30-sticker pack cap is chained here: keep offering the
+    // next pack while the user accepts, and end the run the moment they
+    // dismiss rather than stacking more dialogs on them.
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: android.content.Intent?,
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != WhatsAppPackManager.REQUEST_ADD_PACK) return
+        if (resultCode == android.app.Activity.RESULT_OK) {
+            WhatsAppPackManager.nextPack(this)
+        } else {
+            WhatsAppPackManager.clearPending()
+        }
+    }
 }

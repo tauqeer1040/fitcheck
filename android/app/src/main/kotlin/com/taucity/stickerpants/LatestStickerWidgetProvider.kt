@@ -9,7 +9,7 @@ import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetProvider
 
 /**
- * 2x2 homescreen widget: transparent — the single latest cutout
+ * 2x3 homescreen widget: transparent — the single latest cutout
  * floating over its tinted silhouette. The silhouette steps through 8
  * pre-rendered rotation frames (45° each, 1s apart) via the
  * launcher-driven ViewFlipper: the fullscreen rotation as a frozen
@@ -89,7 +89,7 @@ class LatestStickerWidgetProvider : HomeWidgetProvider() {
                     // a string, legacy doubles arrive as raw Long bits —
                     // prefsFloat range-guards both to a sane default.
                     val funnySp = WidgetShapes.prefsFloat(
-                        widgetData, "funny_text_sp", 15f,
+                        widgetData, "funny_text_sp", 17f,
                     )
                     if (!funny.isNullOrEmpty()) {
                         setTextViewTextSize(
@@ -99,6 +99,21 @@ class LatestStickerWidgetProvider : HomeWidgetProvider() {
                         )
                         setTextViewText(
                             R.id.widget_funny, funny,
+                        )
+                        // Caption starts at the left edge and only centres
+                        // once it has to wrap. A remote view can't measure
+                        // itself, so the rule is resolved here and shipped
+                        // as an int (see WidgetShapes.captionGravity).
+                        setInt(
+                            R.id.widget_funny,
+                            "setGravity",
+                            WidgetShapes.captionGravity(
+                                context,
+                                appWidgetManager,
+                                widgetId,
+                                funny,
+                                funnySp,
+                            ),
                         )
                         setViewVisibility(
                             R.id.widget_funny, android.view.View.VISIBLE,

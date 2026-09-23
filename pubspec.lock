@@ -262,6 +262,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.5.2"
+  flutter_confetti:
+    dependency: "direct main"
+    description:
+      name: flutter_confetti
+      sha256: "8a1b89b73398453b0a8216f0af3bf2a25ea7ce14234fbf47011061e889fca85b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.2"
   flutter_image_compress:
     dependency: "direct main"
     description:
@@ -397,6 +405,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  font_awesome_flutter:
+    dependency: "direct main"
+    description:
+      name: font_awesome_flutter
+      sha256: "09dcde8ab90ffae1a7d65ff2ef96fc62a17ad9d0ce7c127b317ded676b0d5935"
+      url: "https://pub.dev"
+    source: hosted
+    version: "11.0.0"
   google_mlkit_commons:
     dependency: transitive
     description:

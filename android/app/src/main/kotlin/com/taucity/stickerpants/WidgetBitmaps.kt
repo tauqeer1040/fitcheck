@@ -15,7 +15,7 @@ import android.graphics.RectF
  * down to widget size, then clip to an M3 shape (RemoteViews has no
  * CardView/clip support).
  *
- * Shapes: 2x2 widget alternates arch/gem per save; 2x4 cells cycle
+ * Shapes: 2x3 widget alternates arch/gem per save; 2x5 cells cycle
  * clamshell/semicircle. Shape names arrive from Dart (sticker_N_shape).
  */
 object WidgetBitmaps {

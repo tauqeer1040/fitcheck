@@ -90,7 +90,7 @@
             android:enabled="true"
             android:readPermission="com.whatsapp.sticker.READ" />
 
-        <!-- Homescreen widgets: 2x4 (three recent stickers) and 2x2
+        <!-- Homescreen widgets: 2x5 (three recent stickers) and 2x3
              (latest sticker). home_widget's provider base class handles
              the SharedPreferences bridge from Dart. -->
         <receiver

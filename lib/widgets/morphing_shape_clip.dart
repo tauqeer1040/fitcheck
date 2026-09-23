@@ -12,9 +12,11 @@ import 'package:material_new_shapes/material_new_shapes.dart';
 /// reference implementation: 650ms spring morphs (damping 0.6,
 /// stiffness 200), full rotation every 4666ms.
 ///
-/// An optional hairline [borderColor] traces the same morphing outline
-/// on top of the clipped child (same path, stroked) — the cutout halo
-/// preview.
+/// No outline is ever stroked: the shape is carried entirely by
+/// [outsideColor] (the wash whose window IS the morphing shape) and by
+/// the optional clip. A white hairline used to trace the path on top —
+/// it read as a sticker stroke stuck on the photo rather than the shape
+/// itself, so it is gone.
 class MorphingShapeClip extends StatefulWidget {
   final Widget child;
 
@@ -30,12 +32,6 @@ class MorphingShapeClip extends StatefulWidget {
 
   /// Time to travel from 1.0 to [endScale], then holds.
   final Duration shrinkDuration;
-
-  /// Hairline border tracing the morphing outline (null = none).
-  final Color? borderColor;
-
-  /// Border stroke width when [borderColor] is set.
-  final double borderWidth;
 
   /// When false, the child is NOT clipped — it shows full-bleed while
   /// the morphing outline traces on top as a border-only overlay
@@ -66,8 +62,6 @@ class MorphingShapeClip extends StatefulWidget {
     this.rotateImage = false,
     this.endScale = 1.0,
     this.shrinkDuration = const Duration(seconds: 4),
-    this.borderColor,
-    this.borderWidth = 2.0,
     this.clipChild = true,
     this.childAspectRatio,
     this.outsideColor,
@@ -240,9 +234,8 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
                   child: content,
                 );
               }
-              final border = widget.borderColor;
               final outside = widget.outsideColor;
-              if (border == null && outside == null) return content;
+              if (outside == null) return content;
               return Stack(
                 // Center the .child in the box: the Stack default is
                 // topStart, which pinned the preview photo to the top
@@ -255,25 +248,14 @@ class _MorphingShapeClipState extends State<MorphingShapeClip>
                   // caller's business, so the wash can be faded in when
                   // the photo's profile color lands and faded back out
                   // when the cutout arrives.
-                  if (outside != null)
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: _OutsideFillPainter(
-                          path: path,
-                          color: outside,
-                        ),
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _OutsideFillPainter(
+                        path: path,
+                        color: outside,
                       ),
                     ),
-                  if (border != null)
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: _ShapeBorderPainter(
-                          path: path,
-                          color: border,
-                          width: widget.borderWidth,
-                        ),
-                      ),
-                    ),
+                  ),
                 ],
               );
             },
@@ -367,30 +349,3 @@ class _OutsideFillPainter extends CustomPainter {
   bool shouldRepaint(_OutsideFillPainter oldDelegate) => true;
 }
 
-/// Hairline stroke of the morphing outline.
-class _ShapeBorderPainter extends CustomPainter {
-  final Path path;
-  final Color color;
-  final double width;
-
-  const _ShapeBorderPainter({
-    required this.path,
-    required this.color,
-    required this.width,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = width
-        ..strokeJoin = StrokeJoin.round
-        ..color = color,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_ShapeBorderPainter oldDelegate) => true;
-}

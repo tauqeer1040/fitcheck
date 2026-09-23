@@ -57,6 +57,20 @@ class StickerContentProvider : ContentProvider() {
         const val PACK_PUBLISHER = "StickerPants"
         const val TRAY_IMAGE_FILE = "tray_icon.png"
 
+        /// WhatsApp caps a pack at 30 stickers, so a library larger than that
+        /// ships as several packs. Pack 0 keeps the original id, name and tray
+        /// filename so existing installs update the pack they already have
+        /// instead of picking up a duplicate "My StickerPants Stickers 2"
+        /// beside it.
+        fun packIdentifier(index: Int): String =
+            if (index == 0) PACK_IDENTIFIER else "${PACK_IDENTIFIER}_${index + 1}"
+
+        fun packName(index: Int): String =
+            if (index == 0) PACK_NAME else "$PACK_NAME ${index + 1}"
+
+        fun trayImageFile(index: Int): String =
+            if (index == 0) TRAY_IMAGE_FILE else "tray_icon_${index + 1}.png"
+
         private const val METADATA = "metadata"
         private const val METADATA_CODE = 1
         private const val METADATA_CODE_FOR_SINGLE_PACK = 2
@@ -64,7 +78,6 @@ class StickerContentProvider : ContentProvider() {
         private const val STICKERS_CODE = 3
         private const val STICKERS_ASSET = "stickers_asset"
         private const val STICKERS_ASSET_CODE = 4
-        private const val STICKER_PACK_TRAY_ICON_CODE = 5
     }
 
     private val matcher = UriMatcher(UriMatcher.NO_MATCH)
@@ -89,9 +102,17 @@ class StickerContentProvider : ContentProvider() {
         matcher.addURI(authority, METADATA, METADATA_CODE)
         matcher.addURI(authority, "$METADATA/*", METADATA_CODE_FOR_SINGLE_PACK)
         matcher.addURI(authority, "$STICKERS/*", STICKERS_CODE)
-        // Note: unlike the sample we do NOT register per-file asset URIs at
-        // startup — the pack is dynamic. openAssetFile validates the file
-        // against contents.json on every fetch instead.
+        // The pack is generated at runtime, so this is one wildcard instead
+        // of the sample's per-file registrations. Stickers and the tray icon
+        // share the same 3-segment shape (stickers_asset/<id>/<file>), so a
+        // single route covers both and openAssetFile decides which file it
+        // got by validating the name against contents.json.
+        //
+        // This route is load-bearing: with it missing the matcher reported
+        // NO_MATCH for every asset URI, openAssetFile bailed out on its own
+        // guard, and WhatsApp failed the entire pack with "there's a problem
+        // with this sticker pack" because it could not fetch a single byte.
+        matcher.addURI(authority, "$STICKERS_ASSET/*/*", STICKERS_ASSET_CODE)
         return true
     }
 
@@ -194,9 +215,7 @@ class StickerContentProvider : ContentProvider() {
     }
 
     override fun openAssetFile(uri: Uri, mode: String): AssetFileDescriptor? {
-        if (matcher.match(uri) != STICKERS_ASSET_CODE &&
-            matcher.match(uri) != STICKER_PACK_TRAY_ICON_CODE
-        ) return null
+        if (matcher.match(uri) != STICKERS_ASSET_CODE) return null
         val segments = uri.pathSegments
         if (segments.size != 3) {
             throw IllegalArgumentException("path segments should be 3, uri is: $uri")
@@ -239,8 +258,10 @@ class StickerContentProvider : ContentProvider() {
         METADATA_CODE_FOR_SINGLE_PACK ->
             "vnd.android.cursor.item/vnd.$CONTENT_PROVIDER_AUTHORITY.$METADATA"
         STICKERS_CODE -> "vnd.android.cursor.dir/vnd.$CONTENT_PROVIDER_AUTHORITY.$STICKERS"
-        STICKERS_ASSET_CODE -> "image/webp"
-        STICKER_PACK_TRAY_ICON_CODE -> "image/png"
+        // Tray icon shares the asset URI shape with the stickers, so the
+        // type is decided by the file itself rather than a second route.
+        STICKERS_ASSET_CODE ->
+            if (uri.lastPathSegment?.endsWith(".png") == true) "image/png" else "image/webp"
         else -> null
     }
 

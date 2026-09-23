@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/analytics_service.dart';
+import '../services/preset_stickers_service.dart';
 import '../services/revenuecat_service.dart';
 import 'gallery_screen.dart';
 
@@ -73,6 +74,12 @@ class _SplashScreenState extends State<SplashScreen>
     // Onboarding SKIPPED for now: home loads directly on every launch.
     // (OnboardingFlow still writes `onboarding_completed_v1` when run.)
     await SharedPreferences.getInstance();
+
+    // Ship with a wardrobe: the preset set lands in the store before the
+    // gallery reads it, so a fresh install never opens on the empty
+    // state. One-shot, and a no-op on any store that already has
+    // stickers in it.
+    await PresetStickersService.ensureSeeded();
 
     if (!mounted) return;
     setState(() {

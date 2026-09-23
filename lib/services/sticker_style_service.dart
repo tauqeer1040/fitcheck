@@ -138,4 +138,38 @@ class StickerStyleService {
       );
     }
   }
+
+  /// Dominant color (same quantizer + scorer as [analyze]) from an
+  /// ALREADY-decoded image — for batches, where decoding a second time
+  /// per image would cost more than the analysis. Only a sparse sample
+  /// of pixels is fed to the quantizer; the palette it needs is the
+  /// same. Never throws: falls back to the neutral color.
+  static Future<int> dominantColorOf(ui.Image image) async {
+    try {
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (bytes == null) return kFallbackStickerColor;
+      final rgba = bytes.buffer.asUint8List();
+      // Every 4th pixel in each axis (~1/16 of them), skipping the fully
+      // transparent cutout padding so it can't win as "dominant black".
+      const step = 4;
+      final pixels = <int>[];
+      for (var y = 0; y < image.height; y += step) {
+        for (var x = 0; x < image.width; x += step) {
+          final i = (y * image.width + x) * 4;
+          if (i + 3 >= rgba.length) break;
+          if (rgba[i + 3] < 16) continue;
+          pixels.add(
+            0xFF000000 | (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2],
+          );
+        }
+      }
+      if (pixels.isEmpty) return kFallbackStickerColor;
+      final quantizer = await QuantizerCelebi().quantize(pixels, 64);
+      final colorToCount = quantizer.colorToCount;
+      if (colorToCount.isEmpty) return kFallbackStickerColor;
+      return Score.score(colorToCount).first;
+    } catch (_) {
+      return kFallbackStickerColor;
+    }
+  }
 }

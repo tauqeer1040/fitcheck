@@ -1,9 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_confetti/flutter_confetti.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../motion/app_haptics.dart';
 import '../services/analytics_service.dart';
+import '../services/growth_service.dart';
+import '../services/moment_paywall_service.dart';
 import '../services/pro_access_service.dart';
+import '../services/whatsapp_sticker_service.dart';
+import '../widgets/shape_marquee.dart';
+import '../widgets/sheet_stat_tile.dart';
+import '../widgets/sticker_loop_header.dart';
+import 'expired_upsell_sheet.dart';
 
 /// Post-subscription thank-you (ramadan pattern): a dismissable
 /// bottomsheet with the user's stats. Shown once per purchase/restore
@@ -29,13 +39,24 @@ class MaxThankYouSheet {
       }
       debugPrint('[MaxThankYou] presenting (restored=$restored)');
       AppHaptics.milestone();
-      await showModalBottomSheet(
+      final sheetFuture = showModalBottomSheet(
         context: context,
         useSafeArea: true,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (_) => _MaxThankYou(restored: restored),
       );
+      // Purchase delight: confetti bursts as the sheet opens.
+      // Fire-and-forget off the sheet future so a confetti failure can
+      // never block the sheet.
+      try {
+        Confetti.launch(
+          context,
+          options:
+              const ConfettiOptions(particleCount: 60, spread: 80, y: 0.4),
+        );
+      } catch (_) {}
+      await sheetFuture;
       // Dismissed: mark seen so the boot welcome-back never repeats it.
       // Previews pass markSeen:false to stay out of the way.
       if (markSeen) {
@@ -138,6 +159,34 @@ class MaxThankYouSheet {
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () async {
+                  Navigator.of(ctx).pop();
+                  await ExpiredUpsellSheet.showPreview(
+                    context,
+                    onGetMax: () => MomentPaywallService.maybeShow(
+                      context,
+                      placement: 'expired_upsell_preview',
+                      locked: false,
+                    ),
+                  );
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text(
+                  'Expired upsell',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -157,6 +206,12 @@ class _MaxThankYouState extends State<_MaxThankYou> {
   int _made = 0;
   int _free = 0;
   int _days = 1;
+  bool _widgetsBusy = false;
+
+  /// Wardrobe palette: distinct dominant shades of the current
+  /// stickers, brand yellow when the gallery is empty. Tints the
+  /// unlocked-shapes marquee below.
+  List<int> _palette = const [0xFFFFD60A];
 
   @override
   void initState() {
@@ -177,13 +232,37 @@ class _MaxThankYouState extends State<_MaxThankYou> {
         days = DateTime.now().difference(install).inDays + 1;
         if (days < 1) days = 1;
       }
+      final stickers = await WhatsAppStickerService.loadStickers();
+      final shades = <int>[];
+      for (final s in stickers) {
+        final c = s.dominantColor;
+        if (c != null && !shades.contains(c)) shades.add(c);
+      }
       if (!mounted) return;
       setState(() {
         _made = made;
         _free = free;
         _days = days;
+        if (shades.isNotEmpty) _palette = shades;
       });
     } catch (_) {}
+  }
+
+  Future<void> _addWidgets() async {
+    if (_widgetsBusy) return;
+    setState(() => _widgetsBusy = true);
+    try {
+      await GrowthService.pinWidgets();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pick StickerPants in the widget list!'),
+        ),
+      );
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _widgetsBusy = false);
+    }
   }
 
   @override
@@ -194,117 +273,135 @@ class _MaxThankYouState extends State<_MaxThankYou> {
         color: Color(0xFF1C1C1E),
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(2),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Image.asset(
-            'assets/stickerpantsmax.webp',
-            width: 200,
-            fit: BoxFit.contain,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            widget.restored ? 'Welcome back to Max' : 'Thanks for getting Max',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
+            const SizedBox(height: 12),
+            const StickerLoopHeader(size: 200),
+            const SizedBox(height: 16),
+            Text(
+              widget.restored ? 'Welcome back to Max' : 'Thanks for getting Max',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Unlimited stickers. No gates. Just fits.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.55),
-              fontSize: 14,
+            const SizedBox(height: 8),
+            Text(
+              'Unlimited stickers. No gates. Just fits.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 14,
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _StatTile(value: '$_made', label: 'stickers made'),
-              _StatTile(value: '$_free', label: 'free before Max'),
-              _StatTile(value: '$_days', label: 'days sticking'),
-            ],
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: FilledButton(
-              onPressed: () {
-                AppHaptics.tap();
-                Navigator.of(context).pop();
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFFFD60A),
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: SheetStatTile(
+                      value: '$_made', label: 'stickers made'),
+                ),
+                const SheetStatDivider(),
+                Expanded(
+                  child: SheetStatTile(
+                      value: '$_free', label: 'free before Max'),
+                ),
+                const SheetStatDivider(),
+                Expanded(
+                  child: SheetStatTile(
+                      value: '$_days', label: 'days sticking'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 60,
+              child: FilledButton(
+                onPressed: _widgetsBusy ? null : _addWidgets,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.08),
+                  foregroundColor: Colors.white.withValues(alpha: 0.75),
+                  side: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.2),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.widgets_rounded, size: 20),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'Add homescreen widgets now',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            _widgetsBusy
+                                ? 'Opening…'
+                                : '(free, forever yours)',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color:
+                                  Colors.white.withValues(alpha: 0.5),
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: const Text(
-                'Start sticking',
-                style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 20),
+            ShapeMarquee(colors: _palette),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: FilledButton(
+                onPressed: () {
+                  AppHaptics.tap();
+                  Navigator.of(context).pop();
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFD60A),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text(
+                  'Start sticking',
+                  style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800),
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatTile extends StatelessWidget {
-  final String value;
-  final String label;
-  const _StatTile({required this.value, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 100,
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
+          ],
         ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFFFFD60A),
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 11.5,
-            ),
-          ),
-        ],
       ),
     );
   }

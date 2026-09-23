@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 2x2 widget: transparent — latest cutout floating over its tinted
+<!-- 2x3 widget: transparent — latest cutout floating over its tinted
      silhouette. The silhouette steps through 8 pre-rendered rotation
      frames (45deg each, 1s apart) via the launcher-driven ViewFlipper:
      no ticker, no battery cost. Art stays static on top. -->
@@ -36,8 +36,8 @@
         android:layout_marginLeft="10dp"
         android:layout_marginRight="10dp"
         android:layout_marginBottom="10dp"
-        android:gravity="left"
-        android:textSize="14sp"
+        android:gravity="center"
+        android:textSize="16sp"
         android:textStyle="italic"
         android:textColor="#CCFFFFFF"
         android:shadowColor="#FF000000"

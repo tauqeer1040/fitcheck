@@ -44,6 +44,19 @@ class ProAccessService {
     }
   }
 
+  /// Spends free-quota slots without recording a sticker as made — for
+  /// the presets the app ships with, which occupy the first of the 30
+  /// free stickers but were never "made" by anyone. [totalMade] is left
+  /// alone so the paywall's count stays honest.
+  static Future<void> markFreeSlotsUsed(int count) async {
+    if (count <= 0) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      _freeCountKey,
+      (prefs.getInt(_freeCountKey) ?? 0) + count,
+    );
+  }
+
   /// One-shot soft paywall after onboarding (postponed until first
   /// gallery entry). Returns true if it still needs showing.
   static Future<bool> consumeOnboardingPaywall() async {

@@ -6,7 +6,7 @@ import '../motion/app_haptics.dart';
 import '../services/whatsapp_sticker_service.dart';
 
 /// Homescreen widget samples: transparent rounded-square silhouette
-/// holding the sticker + its tinted logo silhouette - 2x2 latest, 2x4
+/// holding the sticker + its tinted logo silhouette - 2x3 latest, 2x5
 /// recents - with the user's actual latest stickers (logo fallback
 /// when empty). Each sample's slider scrubs the logo angle while the
 /// art stays static: the fullscreen silhouette rotation, one frozen
@@ -33,8 +33,8 @@ class _WidgetSamplesSheet extends StatefulWidget {
 class _WidgetSamplesSheetState extends State<_WidgetSamplesSheet> {
   List<String> _recent = [];
 
-  /// Per-sample logo-silhouette angles (radians): 0 = 2x2 latest,
-  /// 1 = 2x4 recents. Preview-only — nothing persists.
+  /// Per-sample logo-silhouette angles (radians): 0 = 2x3 latest,
+  /// 1 = 2x5 recents. Preview-only — nothing persists.
   final List<double> _angles = [0.0, 0.0];
 
   @override
@@ -175,12 +175,12 @@ class _WidgetSamplesSheetState extends State<_WidgetSamplesSheet> {
             ),
           ),
           const SizedBox(height: 20),
-          // 2x2 latest samples: gem + arch containers, mirroring the
+          // 2x3 latest samples: gem + arch containers, mirroring the
           // real widget's alternating shapes.
           const Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '2 × 2 · Latest sticker',
+              '2 × 3 · Latest sticker',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 13,
@@ -206,11 +206,11 @@ class _WidgetSamplesSheetState extends State<_WidgetSamplesSheet> {
           ),
           _angleSlider(0),
           const SizedBox(height: 20),
-          // 2x4 recents sample: logo silhouette + stickers.
+          // 2x5 recents sample: logo silhouette + stickers.
           const Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '2 × 4 · Recent stickers',
+              '2 × 5 · Recent stickers',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 13,

@@ -9,6 +9,9 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Typeface
+import android.util.TypedValue
+import android.view.Gravity
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -22,6 +25,11 @@ import kotlin.math.sin
  * can't run custom draw code, so the shape ships as an ImageView).
  */
 object WidgetShapes {
+
+    /// Horizontal margin baked into the caption layouts: 10dp per side
+    /// (layout_marginLeft/Right on @id/widget_funny). Kept here so the
+    /// measurement below matches the box the text is actually drawn in.
+    private const val CAPTION_SIDE_MARGIN_DP = 10f
 
     /**
      * Color round-trip from Dart: ints cross the method channel as Long
@@ -152,7 +160,7 @@ object WidgetShapes {
 
     /**
      * Widget container shapes (filled paths), mirroring the sticker
-     * clip math in WidgetBitmaps: 2x2 alternates gem/arch, 2x4 cycles
+     * clip math in WidgetBitmaps: 2x3 alternates gem/arch, 2x5 cycles
      * semicircle/clamshell. Unknown names fall back to the 12-cookie
      * (the previous look).
      *
@@ -477,7 +485,7 @@ object WidgetShapes {
      * on top) leaks past its edges. Optional fully-blurred halo
      * ([blurFraction] of size, NORMAL) for a soft overlay glow — the
      * content scale must leave room: extremes (1-scale)/2..(1+scale)/2
-     * plus blur must stay inside [0,1] (2x4: 0.78 + 0.10 fits).
+     * plus blur must stay inside [0,1] (2x5: 0.78 + 0.10 fits).
      * [angleDeg] rotates the shape around its center — the frames of
      * the launcher-driven flip rotation.
      */
@@ -563,5 +571,25 @@ object WidgetShapes {
         val wPx = ((if (wDp > 0) wDp * density else 256f).toInt()) / 2
         val hPx = ((if (hDp > 0) hDp * density else 128f).toInt()) / 2
         return renderContainer(shape, wPx, hPx, color)
+    }
+
+    /**
+     * Gravity for a widget caption: always centred. (It used to sit left
+     * until it wrapped; the centred caption reads better under the art.)
+     * Kept as a function so both providers keep one call site.
+     */
+    fun captionGravity(
+        context: Context,
+        mgr: AppWidgetManager,
+        widgetId: Int,
+        text: String,
+        sp: Float,
+        // The inset differs per widget: the latest layout insets its caption
+        // by 10dp margins, the recent one by its parent's 8dp padding.
+        // Measuring against the wrong one risks choosing LEFT for text that
+        // actually wraps.
+        sideMarginDp: Float = CAPTION_SIDE_MARGIN_DP,
+    ): Int {
+        return Gravity.CENTER
     }
 }

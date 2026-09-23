@@ -49,7 +49,7 @@ object StickerReminders {
     private const val KEY_LAST_NIGHT = "lastShownNight"
 
     const val FALLBACK_TITLE = "StickerPants"
-    const val FALLBACK_BODY = "add your outfit today"
+    const val FALLBACK_BODY = "Add your outfit today"
 
     private const val MORNING_HOUR = 8
     private const val MORNING_MINUTE = 0

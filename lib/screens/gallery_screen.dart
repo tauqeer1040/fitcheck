@@ -26,11 +26,12 @@ import '../services/subject_cutout_service.dart';
 import '../services/widget_service.dart';
 import '../widgets/gallery_bottom_sheet.dart';
 import '../widgets/genie_flight.dart';
-import '../widgets/shape_lab_sheet.dart';
 import '../widgets/sticker_grid.dart';
 import '../widgets/wordmark_shadow.dart';
 import 'growth_prompt_sheet.dart';
+import 'expired_upsell_sheet.dart';
 import 'max_thankyou_sheet.dart';
+import 'onboarding_flow.dart';
 import 'shape_demo_sheet.dart';
 import 'sticker_detail_screen.dart';
 
@@ -140,8 +141,11 @@ class _GalleryScreenState extends State<GalleryScreen>
     final index = _stickers.indexWhere((s) => s.id == sticker.id);
     if (index < 0) return;
     // A newer delete flushes whatever the previous Undo window held.
+    // (The '-' badge fires the haptic on touch-down; do not fire a second
+    // one here — it lands after this await and reads as a late buzz.)
     await _purgeTrash();
-    AppHaptics.tap();
+    // Deleting is a churn moment: keep growth asks away from it.
+    unawaited(GrowthService.noteBadMoment());
     final removed = _stickers[index];
     _trashIndex = index;
     _trashSticker = removed;
@@ -295,6 +299,10 @@ class _GalleryScreenState extends State<GalleryScreen>
     });
   }
 
+  /// Last launch/foreground paywall ask (ms). Keeps boot and the first
+  /// resume from stacking two sheets back-to-back.
+  int _lastLaunchAskMs = 0;
+
   Future<void> _boot() async {
     await _loadStickers();
     await _loadShapeBgFlag();
@@ -304,13 +312,19 @@ class _GalleryScreenState extends State<GalleryScreen>
     } catch (_) {}
     if (mounted) setState(() {});
     await _migrateLegacy();
+    // Widget rotation rolls forward on every boot (daily stickers,
+    // 2x-daily funny line) when its day/period turned overnight.
+    unawaited(WidgetService.maybeRotate());
     // One-shot soft paywall on first gallery entry (post-onboarding).
     // Dismissable; the hard gate fires at the 30-sticker limit.
+    var onboardingShown = false;
     if (await ProAccessService.consumeOnboardingPaywall()) {
       await RevenueCatService.instance.ensureInitialized();
       if (!RevenueCatService.instance.isPro && mounted) {
         await Future<void>.delayed(const Duration(milliseconds: 600));
         if (!mounted) return;
+        onboardingShown = true;
+        _lastLaunchAskMs = DateTime.now().millisecondsSinceEpoch;
         await MomentPaywallService.maybeShow(
           context,
           placement: 'onboarding',
@@ -328,6 +342,35 @@ class _GalleryScreenState extends State<GalleryScreen>
       if (!seen && RevenueCatService.instance.isPro && mounted) {
         await MaxThankYouSheet.show(context, restored: true);
       }
+    } catch (_) {}
+    // Non-subscribers get the (dismissable) paywall on every launch —
+    // skipped when the onboarding sheet just showed so they never stack.
+    if (!onboardingShown) {
+      unawaited(_launchPaywallAsk('app_launch'));
+    }
+  }
+
+  /// Launch/foreground ask for non-subscribers: soft paywall, forced
+  /// past quota + frequency caps. Guarded: Pro passes silently, never
+  /// within 60s of the last ask, and only when the gallery is the
+  /// current route (never over preview/detail/sheets).
+  Future<void> _launchPaywallAsk(String placement) async {
+    try {
+      await RevenueCatService.instance.ensureInitialized();
+      if (RevenueCatService.instance.isPro || !mounted) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastLaunchAskMs < const Duration(seconds: 60).inMilliseconds) {
+        return;
+      }
+      final route = ModalRoute.of(context);
+      if (!(route?.isCurrent ?? false)) return;
+      _lastLaunchAskMs = now;
+      await MomentPaywallService.maybeShow(
+        context,
+        placement: placement,
+        locked: false,
+        force: true,
+      );
     } catch (_) {}
   }
 
@@ -350,24 +393,6 @@ class _GalleryScreenState extends State<GalleryScreen>
       final mark = prefs.getDouble('wordmark_shadow_scale');
       if (mark != null) _markScale = mark.clamp(0.5, 1.5);
     } catch (_) {}
-  }
-
-  /// Wordmark long-press: wordmark-shadow size slider. Sticker
-  /// backdrops are hardcoded to 1.0.
-  Future<void> _openShapeLab() async {
-    if (!mounted) return;
-    await showShapeLab(
-      context,
-      initial: _markScale,
-      onChanged: (v) async {
-        if (!mounted) return;
-        setState(() => _markScale = v);
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setDouble('wordmark_shadow_scale', v);
-        } catch (_) {}
-      },
-    );
   }
 
   /// Appbar button: straight on/off toggle for the shape backdrop.
@@ -406,10 +431,15 @@ class _GalleryScreenState extends State<GalleryScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Resume refresh: a purchase, restore, expiry or cancellation that
     // happened elsewhere reconciles the moment we're foregrounded.
+    // Widget rotation also rolls forward here (daily stickers, 2x-daily
+    // funny line) when its day/period turned while we were away.
     if (state == AppLifecycleState.resumed) {
       unawaited(() async {
         await RevenueCatService.instance.refreshCustomerInfo();
+        await WidgetService.maybeRotate();
         if (mounted) setState(() {});
+        // Foreground ask for non-subscribers (guarded inside).
+        if (mounted) await _launchPaywallAsk('app_foreground');
       }());
     }
   }
@@ -459,6 +489,18 @@ class _GalleryScreenState extends State<GalleryScreen>
     } catch (_) {}
     if (!mounted) return;
     setState(() => _m3Thumbs = on);
+  }
+
+  /// Debug card: relaunch onboarding on demand (preview mode — pops
+  /// back here, analytics stay quiet).
+  Future<void> _openOnboardingPreview() async {
+    if (!mounted) return;
+    AppHaptics.tap();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const OnboardingFlow(debugPreview: true),
+      ),
+    );
   }
 
   /// Appbar Pro button: launches the paywall on demand (manual
@@ -536,18 +578,21 @@ class _GalleryScreenState extends State<GalleryScreen>
     await metaFile.writeAsString(json);
   }
 
-  /// Free-tier gate: 30 free stickers, then the locked paywall.
-  /// Pro users and users inside quota pass straight through.
+  /// Free-tier gate: 30 free stickers, then the expired upsell sheet.
+  /// Pro users and users inside quota pass straight through. The sheet
+  /// pitches Max first; Get Max opens the locked paywall from there.
   Future<bool> _passesCreateGate() async {
     await RevenueCatService.instance.ensureInitialized();
     if (!await ProAccessService.canCreateFree()) {
       if (!mounted) return false;
-      final unlocked = await MomentPaywallService.maybeShow(
+      return ExpiredUpsellSheet.show(
         context,
-        placement: 'create_gate',
-        locked: true,
+        onGetMax: () => MomentPaywallService.maybeShow(
+          context,
+          placement: 'expired_upsell',
+          locked: true,
+        ),
       );
-      if (!unlocked) return false;
     }
     return true;
   }
@@ -636,10 +681,13 @@ class _GalleryScreenState extends State<GalleryScreen>
         curve: AppMotion.appleEase,
       );
     }
-    // Growth loop: widgets refresh every save; the suggestion sheet
+    // Growth loop: widgets refresh every save (newest-first window);
+    // the suggestion sheet
     // (review/share/widget prompt) fires on the 1st + every 5th save,
     // 5s after touchdown.
-    unawaited(WidgetService.updateAll(bgColor: _indicatorColor));
+    unawaited(
+      WidgetService.updateAll(bgColor: _indicatorColor, resetRotation: true),
+    );
     if (mounted) {
       unawaited(GrowthService.onStickerAdded(context));
     }
@@ -722,7 +770,6 @@ class _GalleryScreenState extends State<GalleryScreen>
             // state — cycling shape each tap.
             GestureDetector(
               onTap: _toggleShapeBg,
-              onLongPress: _openShapeLab,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -788,6 +835,7 @@ class _GalleryScreenState extends State<GalleryScreen>
                 onPro: _openPro,
                 onPreviewSheets: () =>
                     MaxThankYouSheet.showPreviewPicker(context),
+                onOnboarding: _openOnboardingPreview,
                 onToggleNotif: _toggleNotif,
                 m3Thumbs: _m3Thumbs,
                 onToggleM3Thumbs: _toggleM3Thumbs,

@@ -11,7 +11,6 @@ import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
 import '../services/sticker_style_service.dart';
 import 'genie_flight.dart';
-import 'morphing_shape_clip.dart';
 import 'shaped_sticker.dart';
 
 /// Homescreen sticker board: stickers sit in aligned rows (max [maxColumns]
@@ -68,6 +67,7 @@ class StickerGrid extends StatefulWidget {
   final VoidCallback? onShapeDemo;
   final VoidCallback? onPro;
   final VoidCallback? onPreviewSheets;
+  final VoidCallback? onOnboarding;
 
   /// Per-type notification state + toggle (debug card).
   final ValueChanged<String>? onToggleNotif;
@@ -106,6 +106,7 @@ class StickerGrid extends StatefulWidget {
     this.onShapeDemo,
     this.onPro,
     this.onPreviewSheets,
+    this.onOnboarding,
     this.onToggleNotif,
     this.m3Thumbs = false,
     this.onToggleM3Thumbs,
@@ -170,6 +171,15 @@ class _StickerGridState extends State<StickerGrid>
   static const double _arrowDeg = 130;
   static const double _arrowHeight = 240;
 
+  /// The arrow burns down as the board fills: every saved sticker takes
+  /// one step off its height, gone at 31 (the 30-sticker free quota
+  /// plus the 31st save). Urgency you can feel — never a banner.
+  static const int _arrowGoneAt = 31;
+
+  double get _arrowScale =>
+      ((_arrowGoneAt - widget.stickers.length) / _arrowGoneAt)
+          .clamp(0.0, 1.0);
+
   late final AnimationController _arrowWobble = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 600),
@@ -178,24 +188,6 @@ class _StickerGridState extends State<StickerGrid>
   void _bounceArrow() {
     AppHaptics.tap();
     _arrowWobble.forward(from: 0);
-  }
-
-  /// Debug: fullscreen toggle of the pre-cutout sim — same widget,
-  /// large, on plain dark. Tap anywhere to come back.
-  void _openPreCutoutSim(BuildContext context) {
-    AppHaptics.tap();
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: true,
-        transitionDuration: const Duration(milliseconds: 250),
-        reverseTransitionDuration: const Duration(milliseconds: 200),
-        pageBuilder: (_, animation, _) => FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-          child: const _PreCutoutSimScreen(),
-        ),
-      ),
-    );
   }
 
   /// Live pinch preview: rubber-banded scale + focal anchor. Springs back
@@ -457,28 +449,35 @@ class _StickerGridState extends State<StickerGrid>
             ),
         const SizedBox(height: 8),
         // Arrow: tap plays the jelly bounce + haptic. Fixed art/angle.
-        Transform.rotate(
-          angle: _arrowDeg * math.pi / 180,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _bounceArrow,
-            child: AnimatedBuilder(
-              animation: _arrowWobble,
-              builder: (context, child) {
-                // Decaying sine wobble = jelly.
-                final t = _arrowWobble.value;
-                final s =
-                    1.0 + 0.18 * math.sin(t * 2 * math.pi) * (1 - t);
-                return Transform.scale(scale: s, child: child);
-              },
-              child: Image.asset(
-                'assets/arrow2.webp',
-                height: _arrowHeight,
-                fit: BoxFit.contain,
+        // Shrinks one step per saved sticker; gone at 31.
+        if (_arrowScale > 0)
+          Transform.rotate(
+            angle: _arrowDeg * math.pi / 180,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _bounceArrow,
+              child: AnimatedBuilder(
+                animation: _arrowWobble,
+                builder: (context, child) {
+                  // Decaying sine wobble = jelly.
+                  final t = _arrowWobble.value;
+                  final s =
+                      1.0 + 0.18 * math.sin(t * 2 * math.pi) * (1 - t);
+                  return Transform.scale(scale: s, child: child);
+                },
+                child: Opacity(
+                  // Fade the last 15% of its life so it never clips
+                  // ugly — it dissolves, not shrinks into a sliver.
+                  opacity: (_arrowScale / 0.15).clamp(0.0, 1.0),
+                  child: Image.asset(
+                    'assets/arrow2.webp',
+                    height: _arrowHeight * _arrowScale,
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
             ),
           ),
-        ),
         // Debug card: everything that lived in the appbar (support,
         // shape demo, pro, sheet previews) plus per-type notification
         // toggles. Empty state only — the appbar keeps logo + wordmark.
@@ -529,6 +528,11 @@ class _StickerGridState extends State<StickerGrid>
                     label: 'Thanks',
                     onTap: widget.onPreviewSheets,
                   ),
+                  _DebugBtn(
+                    icon: Icons.waving_hand_rounded,
+                    label: 'Onboard',
+                    onTap: widget.onOnboarding,
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -551,73 +555,6 @@ class _StickerGridState extends State<StickerGrid>
                         widget.onToggleNotif?.call('fire_night'),
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              // Sheet thumbnail style: M3 expressive vs rounded squares.
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'M3 thumbs',
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                  Switch(
-                    value: widget.m3Thumbs,
-                    activeThumbColor: const Color(0xFFFFD60A),
-                    onChanged: widget.onToggleM3Thumbs,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // Live sample of the fullscreen spinner: square
-              // width-driven silhouette box, rotating — check for
-              // top/bottom cutoff here.
-              ShapedSticker(
-                imagePath: 'assets/logo3.png',
-                shapeIndex: widget.indicatorShape,
-                dominantColor: widget.indicatorColor,
-                width: 110,
-                height: 110,
-                shapeScale: 1.0,
-                cardScale: 1.0,
-                rotateSilhouette: true,
-                rotationPeriod: const Duration(seconds: 6),
-              ),
-              const SizedBox(height: 8),
-              // Pre-cutout sim: exactly what the photo looks like inside
-              // the rotating shape while ML runs (static image, morphing
-              // outline, no shrink). Tap toggles it fullscreen.
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _openPreCutoutSim(context),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'PRE-CUTOUT (tap)',
-                      style: TextStyle(
-                        color:
-                            Colors.white.withValues(alpha: 0.35),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      width: 110,
-                      height: 110,
-                      child: MorphingShapeClip(
-                        endScale: 1.0,
-                        child: Image.asset(
-                          'assets/logo3.png',
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.high,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -827,10 +764,12 @@ class _DeleteBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {
-        AppHaptics.tap();
-        onTap?.call();
-      },
+      // Haptic on touch-DOWN, not on tap: the delete that follows does
+      // file IO plus a widget refresh, and a buzz fired after that work
+      // reaches the finger late. iOS snaps the badge feedback the
+      // instant the finger lands.
+      onTapDown: (_) => AppHaptics.tap(),
+      onTap: () => onTap?.call(),
       child: const Padding(
         padding: EdgeInsets.all(16),
         child: _BadgeDot(),
@@ -942,40 +881,6 @@ class _LandingPopState extends State<_LandingPop> {
 
   @override
   Widget build(BuildContext context) => widget.child;
-}
-
-/// Fullscreen pre-cutout sim (debug): the processing visual large —
-/// static photo inside the morphing/rotating outline, no shrink.
-/// Tap anywhere to pop back to the grid.
-class _PreCutoutSimScreen extends StatelessWidget {
-  const _PreCutoutSimScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    final side = MediaQuery.of(context).size;
-    final box = (side.width < side.height ? side.width : side.height) * 0.72;
-    return Scaffold(
-      backgroundColor: const Color(0xFF1C1C1E),
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => Navigator.of(context).pop(),
-        child: Center(
-          child: SizedBox(
-            width: box,
-            height: box,
-            child: MorphingShapeClip(
-              endScale: 1.0,
-              child: Image.asset(
-                'assets/logo3.png',
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.high,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// Compact debug-card button (empty state): yellow icon + white label.

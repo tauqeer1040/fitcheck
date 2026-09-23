@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/max_thankyou_sheet.dart';
 import '../screens/paywall_screen.dart';
 import 'analytics_service.dart';
+import 'growth_service.dart';
 import 'pro_access_service.dart';
 import 'revenuecat_service.dart';
 
@@ -65,6 +66,9 @@ class MomentPaywallService {
       await prefs.setInt(key, now);
 
       AnalyticsService.instance.logPaywallShown(placement: placement);
+      // Nothing lands worse than a "loving it?" ask right after a paywall,
+      // so hold growth prompts for a while. Deferred, never consumed.
+      await GrowthService.noteBadMoment();
       debugPrint('[Paywall] presenting native sheet...');
       final result = await RevenueCatService.instance.presentPaywall(
         dismissable: !locked,

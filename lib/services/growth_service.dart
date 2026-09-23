@@ -13,7 +13,12 @@ import 'notification_service.dart';
 ///
 /// Policy:
 /// - First sticker ever always shows the sheet (unless high-rated/snoozed).
-/// - Then at most once per 24h, on every 5th sticker.
+/// - Then at most once per 24h, on every [cadence]-th sticker.
+/// - Deferrals never consume a turn. A save that lands inside the
+///   throttle window, during a bad moment, or with nothing eligible to
+///   ask for leaves the due marker where it is, so the sheet fires on
+///   the next happy save instead of being skipped until the next exact
+///   multiple.
 /// - Review offered at most once per app version.
 /// - Self-reported 4-5 stars stops review prompts permanently; 1-3 stars
 ///   suppresses them for 30 days.
@@ -23,6 +28,8 @@ class GrowthService {
   static final InAppReview _review = InAppReview.instance;
 
   static const _countKey = 'growth_sticker_count';
+  static const _nextDueKey = 'growth_next_due_count';
+  static const _badMomentUntilMs = 'growth_bad_moment_until_ms';
   static const _lastShownMs = 'growth_sheet_last_shown_ms';
   static const _lastShownAction = 'growth_last_shown_action';
   static const _reviewOfferedVersion = 'growth_review_offered_version';
@@ -36,44 +43,108 @@ class GrowthService {
   static const throttle = Duration(hours: 24);
   static const lowRatingSuppress = Duration(days: 30);
 
-  /// Call after every successful sticker insert. Waits 5s, then decides
-  /// whether today's save earns a prompt sheet (first ever, or every 5th
-  /// save past the throttle window). Persists the count.
+  /// Saves between prompts, after the first-ever one.
+  static const cadence = 5;
+
+  /// How long the user gets to enjoy the sticker before we ask for
+  /// anything. The landing confetti is the happy beat; this is the pause
+  /// that lets it land before the ask.
+  static const soak = Duration(seconds: 5);
+
+  /// How long a bad moment keeps the ask away.
+  static const badMomentWindow = Duration(minutes: 15);
+
+  /// Marks a moment where an ask would land badly — a paywall just
+  /// appeared, or the user is busy deleting. The prompt is deferred, not
+  /// consumed: the whole point is that it fires when they are happy
+  /// instead.
+  static Future<void> noteBadMoment([
+    Duration window = badMomentWindow,
+  ]) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        _badMomentUntilMs,
+        DateTime.now().millisecondsSinceEpoch + window.inMilliseconds,
+      );
+    } catch (_) {}
+  }
+
+  /// Call after every successful sticker insert.
+  ///
+  /// Every exit below except the final one is a DEFERRAL, not a skip: the
+  /// due marker only moves once the sheet has actually been shown, so a
+  /// save that arrives too early is picked up by the next save rather
+  /// than silently burning its turn.
   static Future<void> onStickerAdded(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     final count = (prefs.getInt(_countKey) ?? 0) + 1;
     await prefs.setInt(_countKey, count);
 
+    // High-water mark, not a modulo: the moment the 5th save is due it
+    // STAYS due until a prompt actually fires.
     final isFirst = count == 1;
-    final isFifth = count % 5 == 0;
-    if (!isFirst && !isFifth) return;
+    if (!isFirst && count < (prefs.getInt(_nextDueKey) ?? cadence)) {
+      debugPrint('[Growth] deferred: not due (count=$count)');
+      return;
+    }
 
     final now = DateTime.now().millisecondsSinceEpoch;
     final lastShown = prefs.getInt(_lastShownMs) ?? 0;
-    if (!isFirst && now - lastShown < throttle.inMilliseconds) return;
+    // The first sticker ever is never throttled.
+    if (!isFirst && now - lastShown < throttle.inMilliseconds) {
+      debugPrint('[Growth] deferred: throttle');
+      return;
+    }
+    // A paywall just landed, or they are mid-delete. Wrong moment — stay
+    // due and try again on the next save.
+    if (now < (prefs.getInt(_badMomentUntilMs) ?? 0)) {
+      debugPrint('[Growth] deferred: bad moment');
+      return;
+    }
 
-    // Stamp the throttle before the 5s soak so no async gap separates
-    // the final mounted check from the sheet call.
-    await prefs.setInt(_lastShownMs, now);
+    debugPrint('[Growth] due at count=$count, soaking ${soak.inSeconds}s');
+    // Let them enjoy what they just made.
+    await Future<void>.delayed(soak);
+    if (!context.mounted) {
+      debugPrint('[Growth] deferred: gallery unmounted');
+      return;
+    }
 
-    // Let the user enjoy their new sticker for 5 seconds first.
-    await Future<void>.delayed(const Duration(seconds: 5));
-    if (!context.mounted) return;
-    final sheetContext = context;
+    // Only ask on the home screen. The gallery state stays mounted while
+    // the preview or any other route is on top of it, so without this
+    // the sheet could open over whatever the user is actually looking at.
+    final route = ModalRoute.of(context);
+    if (!(route?.isCurrent ?? false)) {
+      debugPrint(
+          '[Growth] deferred: gallery not current (route=${route.runtimeType}, '
+          'isCurrent=${route?.isCurrent})');
+      return;
+    }
 
-    // Snapshot eligibility BEFORE picking: picking marks review as
-    // offered (dropping it from later snapshots), but the carousel
-    // must still contain the landed page.
+    // Nothing left to ask for (snoozed, or every action already
+    // satisfied) is not a shown prompt — stay due.
     final eligible = await eligibleActions();
+    if (eligible.isEmpty) {
+      debugPrint('[Growth] deferred: nothing eligible');
+      return;
+    }
     final action = await pickNext(eligible);
-    if (action == null) return;
-    if (!sheetContext.mounted) return;
+    if (action == null || !context.mounted) {
+      debugPrint('[Growth] deferred: no action picked');
+      return;
+    }
+    debugPrint('[Growth] presenting action=${action.name}');
 
-    await showGrowthPromptSheet(
-      sheetContext,
-      action,
-      actions: eligible,
-    );
+    final shown =
+        await showGrowthPromptSheet(context, action, actions: eligible);
+    debugPrint('[Growth] sheet closed, shown=$shown');
+    if (!shown) return;
+
+    // Commit only now: throttle from the moment it was really seen, and
+    // move the due marker past this save.
+    await prefs.setInt(_lastShownMs, DateTime.now().millisecondsSinceEpoch);
+    await prefs.setInt(_nextDueKey, count + cadence);
   }
 
   /// Eligible carousel pages right now, in display order:
@@ -208,13 +279,16 @@ class GrowthService {
 
   /// Guides the user to the widget picker (Android 8+ opens the widget
   /// list pre-filtered to this app's widgets). Records the prompt so
-  /// the widgets card leaves the rotation once asked.
-  static Future<void> pinWidgets() async {
+  /// the widgets card leaves the rotation once asked — but only when
+  /// pinning the recents (2x5) widget. Pinning the latest (2x3) widget
+  /// from onboarding leaves the card eligible.
+  static Future<void> pinWidgets({
+    String androidName = 'RecentStickersWidgetProvider',
+  }) async {
     try {
-      await HomeWidget.requestPinWidget(
-        androidName: 'RecentStickersWidgetProvider',
-      );
+      await HomeWidget.requestPinWidget(androidName: androidName);
     } catch (_) {}
+    if (androidName != 'RecentStickersWidgetProvider') return;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_widgetsAdded, true);

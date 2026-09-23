@@ -106,6 +106,15 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   /// fully absorbed into the solid color shape.
   double _collapse = 0.0;
 
+  /// Photo ↔ silhouette crossfade: 0 = the photo, 1 = the shape.
+  ///
+  /// Runs on its OWN ramp, looser than the collapse on purpose. It used
+  /// to ride [_collapse] directly, and since that follows the pop spring
+  /// — which is all but settled inside ~250ms — the picture was already
+  /// gone by the time the shape landed, so the swap read as a cut rather
+  /// than a dissolve.
+  double _photoFade = 0.0;
+
   late AnimationController _liftController;
   late AnimationController _bobController;
 
@@ -122,6 +131,9 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
 
   /// Drives the collapse-into-shape morph once the cutout is ready.
   late final AnimationController _collapseController;
+
+  /// Drives the photo ↔ silhouette crossfade, slower than the collapse.
+  late final AnimationController _photoFadeController;
   Timer? _idleTimer;
 
   @override
@@ -144,6 +156,13 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     );
     _collapseController.addListener(() {
       if (mounted) setState(() => _collapse = _collapseController.value);
+    });
+    _photoFadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _photoFadeController.addListener(() {
+      if (mounted) setState(() => _photoFade = _photoFadeController.value);
     });
     _bgFadeController = AnimationController(
       vsync: this,
@@ -249,6 +268,7 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     _bobController.dispose();
     _shimmerController.dispose();
     _collapseController.dispose();
+    _photoFadeController.dispose();
     _bgFadeController.dispose();
     super.dispose();
   }
@@ -290,6 +310,10 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
             .animateWith(SpringSimulation(_popSpring, 0, 1, 0))
             .orCancel
             .catchError((_) {});
+        // ...and the photo dissolves on a looser ramp of its own, started
+        // on that same frame. The shape arrives at pop speed; the picture
+        // takes its time leaving underneath it.
+        _photoFadeController.forward(from: 0);
       }
     } catch (e) {
       if (mounted) {
@@ -383,6 +407,16 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     _startFloat();
   }
 
+  /// Tap-to-accept: the sticker's other way home. A tap isn't a throw,
+  /// so it gets the light tick rather than [AppHaptics.launch], and it
+  /// only applies once the cutout is lifted and waiting — during the
+  /// reveal a tap has nothing to send yet.
+  void _onTapAccept() {
+    if (_state != _CutoutState.lifted) return;
+    AppHaptics.tap();
+    _startFloat();
+  }
+
   bool get _isCutoutVisible =>
       _cutoutPath != null &&
       (_state == _CutoutState.lifted ||
@@ -470,6 +504,11 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     final c = _style?.dominantColor ?? kFallbackStickerColor;
     final tMove = Curves.easeOutBack.transform(_collapse.clamp(0.0, 1.0));
     final tFade = Curves.easeInOutCubic.transform(_collapse.clamp(0.0, 1.0));
+    // Crossfade only: the box still collapses on the pop spring's own
+    // timing above. This is the slow half of the swap.
+    final tPhoto = Curves.easeInOutCubic.transform(
+      _photoFade.clamp(0.0, 1.0),
+    );
     final w = ui.lerpDouble(bgW, targetW, tMove) ?? bgW;
     final h = ui.lerpDouble(bgH, targetH, tFade) ?? bgH;
     // The morphing shape has to outlive the cutout's arrival: it is the
@@ -489,7 +528,7 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
             kStyleShapes[_shapeIndex],
             width: w,
             height: h,
-            color: Color(c).withValues(alpha: tFade.clamp(0.0, 1.0)),
+            color: Color(c).withValues(alpha: tPhoto.clamp(0.0, 1.0)),
             child: const SizedBox.expand(),
           ),
         ),
@@ -509,15 +548,14 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                     endScale: 1.0,
                     shrinkDuration: const Duration(seconds: 4),
                     clipChild: false,
-                    // Outline and mask are held off until the pick flight
-                    // lands (see [_landed]): while the photo is still
-                    // expanding the card is pure full-bleed art — no
-                    // outline, no mask — so the pick reads as the tapped
-                    // thumbnail growing into the picture. Both then close
-                    // in over the last stretch of the route.
-                    borderColor: Colors.white.withValues(alpha: _landed),
-                    borderWidth: 2.0,
-                    // Profile hue outside the border: the photo only
+                    // The mask is held off until the pick flight lands
+                    // (see [_landed]): while the photo is still expanding
+                    // the card is pure full-bleed art, so the pick reads
+                    // as the tapped thumbnail growing into the picture.
+                    // The shape then closes in over the last stretch of
+                    // the route.
+                    //
+                    // Profile hue outside the shape: the photo only
                     // shows through the shape's own window, and the wash
                     // fades rather than snapping.
                     outsideColor:
@@ -525,14 +563,15 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                     // Hug the photo: landscape → its height, portrait
                     // → its width (null until the header read lands).
                     childAspectRatio: _imageAspect,
-                    // Trims the window 10% inside that measurement.
-                    outlineScale: 0.9,
+                    // Sits 1% inside the measurement — the window grew
+                    // 10% off the old 0.9 trim, both axes.
+                    outlineScale: 0.99,
                     // Shimmer rides the PHOTO, not the card: the mask
                     // above it limits the sweep to the shape's window,
                     // so no light leaks past the floating border.
                     child: _shimmer(
                       Opacity(
-                        opacity: (1.0 - tFade).clamp(0.0, 1.0),
+                        opacity: (1.0 - tPhoto).clamp(0.0, 1.0),
                         child: Image.file(
                           File(widget.imagePath),
                           fit: _fits[_fitIndex],
@@ -547,7 +586,7 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                   width: w,
                   height: h,
                   child: Opacity(
-                    opacity: (1.0 - tFade).clamp(0.0, 1.0),
+                    opacity: (1.0 - tPhoto).clamp(0.0, 1.0),
                     child: Image.file(
                       File(widget.imagePath),
                       fit: _fits[_fitIndex],
@@ -748,6 +787,9 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                     _getStickerOffset().dy +
                     _getBobY(),
               child: GestureDetector(
+                // Tap the sticker to accept it: same path home as a flick,
+                // just without the throw.
+                onTap: _onTapAccept,
                 onPanStart: _state == _CutoutState.lifted ? _onDragStart : null,
                 onPanUpdate: _state == _CutoutState.lifted || _state == _CutoutState.dragging
                     ? _onDragUpdate : null,

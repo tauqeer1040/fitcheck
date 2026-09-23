@@ -28,14 +28,14 @@ class WhatsAppStickerService {
     return list.map(OutfitSticker.fromJson).toList();
   }
 
-  /// Builds the 512x512 WebP pack from the newest [limit] stickers and
-  /// launches WhatsApp's add-pack confirmation. Native side shows a toast
-  /// if WhatsApp isn't installed. Throws on pack-build failure.
-  static Future<void> addPack(
-    List<OutfitSticker> stickers, {
-    int limit = 30,
-  }) async {
-    final paths = stickers.take(limit).map((s) => s.imagePath).toList();
+  /// Builds the 512x512 WebP packs from [stickers] and launches WhatsApp's
+  /// add-pack confirmation. All stickers are sent: native chunks the library
+  /// into several packs of 30, because WhatsApp caps a pack at 30 and a
+  /// single pack would silently drop everything past the newest 30.
+  /// Native side shows a toast if WhatsApp isn't installed. Throws on
+  /// pack-build failure.
+  static Future<void> addPack(List<OutfitSticker> stickers) async {
+    final paths = stickers.map((s) => s.imagePath).toList();
     await _channel.invokeMethod<bool>('addPackToWhatsApp', {'paths': paths});
   }
 }
