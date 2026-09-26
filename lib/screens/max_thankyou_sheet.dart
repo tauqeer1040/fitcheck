@@ -9,6 +9,7 @@ import '../services/analytics_service.dart';
 import '../services/growth_service.dart';
 import '../services/moment_paywall_service.dart';
 import '../services/pro_access_service.dart';
+import '../services/sticker_title_service.dart';
 import '../services/whatsapp_sticker_service.dart';
 import '../widgets/shape_marquee.dart';
 import '../widgets/sheet_stat_tile.dart';
@@ -208,6 +209,9 @@ class _MaxThankYouState extends State<_MaxThankYou> {
   int _days = 1;
   bool _widgetsBusy = false;
 
+  /// Onboarding Q0 name, greeting the sheet. '' until loaded.
+  String _name = '';
+
   /// Wardrobe palette: distinct dominant shades of the current
   /// stickers, brand yellow when the gallery is empty. Tints the
   /// unlocked-shapes marquee below.
@@ -238,11 +242,13 @@ class _MaxThankYouState extends State<_MaxThankYou> {
         final c = s.dominantColor;
         if (c != null && !shades.contains(c)) shades.add(c);
       }
+      final name = await StickerTitleService.storedDisplayName();
       if (!mounted) return;
       setState(() {
         _made = made;
         _free = free;
         _days = days;
+        _name = name;
         if (shades.isNotEmpty) _palette = shades;
       });
     } catch (_) {}
@@ -289,7 +295,9 @@ class _MaxThankYouState extends State<_MaxThankYou> {
             const StickerLoopHeader(size: 200),
             const SizedBox(height: 16),
             Text(
-              widget.restored ? 'Welcome back to Max' : 'Thanks for getting Max',
+              widget.restored
+                  ? 'Welcome back to Max${_name.isNotEmpty ? ', $_name' : ''}'
+                  : 'Thanks for getting Max${_name.isNotEmpty ? ', $_name' : ''}',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Colors.white,

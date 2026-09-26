@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../motion/app_haptics.dart';
 import '../services/growth_service.dart';
 import '../services/pro_access_service.dart';
+import '../services/sticker_title_service.dart';
 import '../services/whatsapp_sticker_service.dart';
 import '../widgets/shape_marquee.dart';
 import '../widgets/sheet_stat_tile.dart';
@@ -73,6 +74,8 @@ class _ExpiredUpsellState extends State<_ExpiredUpsell> {
   int _days = 1;
   bool _widgetsBusy = false;
 
+  /// Onboarding Q0 name, greeting the sheet. '' until loaded.
+  String _name = '';
   /// Wardrobe palette for the locked shapes teaser (same source as the
   /// thank-you marquee).
   List<int> _palette = const [0xFFFFD60A];
@@ -102,11 +105,13 @@ class _ExpiredUpsellState extends State<_ExpiredUpsell> {
         final c = s.dominantColor;
         if (c != null && !shades.contains(c)) shades.add(c);
       }
+      final name = await StickerTitleService.storedDisplayName();
       if (!mounted) return;
       setState(() {
         _made = made;
         _free = free;
         _days = days;
+        _name = name;
         if (shades.isNotEmpty) _palette = shades;
       });
     } catch (_) {}
@@ -168,7 +173,9 @@ class _ExpiredUpsellState extends State<_ExpiredUpsell> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "You've reached the $limit-photo limit.",
+                    _name.isNotEmpty
+                        ? "$_name, you've reached the $limit-photo limit."
+                        : "You've reached the $limit-photo limit.",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.55),

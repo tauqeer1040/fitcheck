@@ -161,6 +161,7 @@ class _StickerGridState extends State<StickerGrid>
     "This app has seen your outfits. It's not judging. It is.",
     'Warning: drip levels barely above acceptable.',
     'You survived the day in that. Reward yourself.',
+    'Psst — long-press a sticker to delete it. Very therapeutic.',
   ];
 
   /// Randomized per app launch so every load feels fresh.

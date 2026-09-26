@@ -4,6 +4,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/outfit_sticker.dart';
+import 'revenuecat_service.dart';
 import 'roast_service.dart';
 import 'sticker_style_service.dart';
 import 'whatsapp_sticker_service.dart';
@@ -175,7 +176,11 @@ class WidgetService {
     await HomeWidget.saveWidgetData(
       'funny_line',
       recent.isNotEmpty
-          ? RoastService.roastFor(recent.first, salt: funnySalt)
+          ? RoastService.roastFor(
+              recent.first,
+              salt: funnySalt,
+              isMax: RevenueCatService.instance.isPro,
+            )
           : '',
     );
     // Caption size both widgets honor. Saved as a string: doubles

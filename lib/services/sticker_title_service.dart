@@ -1,6 +1,10 @@
 /// Funny honorific titles granted after the user shares their name in
 /// onboarding ("Joffery" -> "the Wise"). Deterministic: the same name
 /// always yields the same title, so resume/kill never re-rolls it.
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 class StickerTitleService {
   StickerTitleService._();
 
@@ -38,6 +42,23 @@ class StickerTitleService {
     if (name.isEmpty) return '';
     if (name.length > 20) name = '${name.substring(0, 19).trim()}…';
     return name[0].toUpperCase() + name.substring(1);
+  }
+
+  /// The onboarding Q0 name, display-formed, '' when never answered.
+  /// Lets post-onboarding surfaces (expired upsell, thank-you) greet the
+  /// user without threading the name through every route.
+  static Future<String> storedDisplayName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('onboarding_answers_v1');
+      if (raw == null || raw.isEmpty) return '';
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final answer = decoded['0'];
+      if (answer is! String) return '';
+      return displayNameFor(answer);
+    } catch (_) {
+      return '';
+    }
   }
 
   /// Deterministic title for [raw]; empty input yields ''.

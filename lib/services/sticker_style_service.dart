@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
+import 'revenuecat_service.dart';
+
 /// Per-sticker visual style derived from the source image with the M3
 /// theming engine — the same quantizer + scorer that powers Material You.
 /// The dominant color fills the shape card; the shape itself is derived
@@ -68,15 +70,27 @@ final List<Shapes> kStyleShapes = [
 /// Neutral fallback for images the scorer rejects (pure grayscale etc.).
 const int kFallbackStickerColor = 0xFF606060;
 
+/// Free-tier shape cap: 15 of the M3 silhouettes. Max members wear the
+/// whole set; everyone else draws from the first 15 — new stickers,
+/// thumbs, and reveals alike. Stored stickers keep whatever they have.
+const int kFreeShapeCount = 15;
+
 /// Deterministic shape for stickers without a stored style.
-int fallbackShapeIndex(String id) => id.hashCode.abs() % kStyleShapes.length;
+int fallbackShapeIndex(String id) {
+  final i = id.hashCode.abs() % kStyleShapes.length;
+  if (RevenueCatService.instance.isPro) return i;
+  return i % kFreeShapeCount;
+}
 
 /// Stable RANDOM shape for a gallery photo: seeded by the photo's
 /// asset id, so it looks random but never flickers while scrolling —
 /// and the sheet thumb matches the shape the sticker will get when
 /// that photo is picked. The fullscreen view re-rolls fresh shapes.
-int randomShapeIndexForAsset(String assetId) =>
-    math.Random(assetId.hashCode).nextInt(kStyleShapes.length);
+int randomShapeIndexForAsset(String assetId) {
+  final i = math.Random(assetId.hashCode).nextInt(kStyleShapes.length);
+  if (RevenueCatService.instance.isPro) return i;
+  return i % kFreeShapeCount;
+}
 
 class StickerStyleService {
   StickerStyleService._();

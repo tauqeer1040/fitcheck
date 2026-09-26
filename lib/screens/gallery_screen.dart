@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:confetti/confetti.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -108,7 +109,6 @@ class _GalleryScreenState extends State<GalleryScreen>
 
   /// File path of a trashed sticker awaiting the Undo window, if any.
   String? _trashPath;
-
   /// Model of the trashed sticker (style metadata survives Undo).
   OutfitSticker? _trashSticker;
 
@@ -133,6 +133,59 @@ class _GalleryScreenState extends State<GalleryScreen>
     if (!_jiggling) return;
     AppHaptics.mode();
     setState(() => _jiggling = false);
+  }
+
+  /// First-grid-view tip, once ever: long-press deletes. Styled exactly
+  /// like the 'Sticker removed' toast. Debug builds replay it from the
+  /// appbar touch icon.
+  static const _longTapTipKey = 'longtap_tip_shown_v1';
+
+  Future<void> _maybeLongTapTip() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_longTapTipKey) ?? false) return;
+      await prefs.setBool(_longTapTipKey, true);
+    } catch (_) {}
+    if (!mounted) return;
+    // Let the grid settle a beat so the tip lands on stickers, not a
+    // spinner.
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+    _showLongTapTip();
+  }
+
+  void _showLongTapTip() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        // Transparent shell: the frosted content below is the toast.
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        padding: EdgeInsets.zero,
+        duration: const Duration(seconds: 4),
+        content: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              color: const Color(0xFF3A3A3C).withValues(alpha: 0.72),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              child: const Text(
+                'Long-press a sticker to remove it.',
+                style: TextStyle(color: Colors.white, fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Deletes [sticker]: removes it now, parks its PNG in a temp trash file,
@@ -298,6 +351,7 @@ class _GalleryScreenState extends State<GalleryScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onReady?.call();
+      unawaited(_maybeLongTapTip());
     });
   }
 
@@ -793,6 +847,13 @@ class _GalleryScreenState extends State<GalleryScreen>
             ),
           ],
         ),        actions: [
+          // Debug replay for the first-view long-press tip.
+          if (kDebugMode)
+            IconButton(
+              tooltip: 'Long-press tip',
+              onPressed: _showLongTapTip,
+              icon: const Icon(Icons.touch_app_rounded),
+            ),
           // Everything else lives in the empty-state debug card
           // (logo + wordmark stay here). Done exits delete mode.
           if (_jiggling)

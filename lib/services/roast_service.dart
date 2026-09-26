@@ -36,16 +36,45 @@ class RoastService {
     'Fit check: passed with honors.',
   ];
 
+  /// Max-member exclusives: same house rules, premium flavor. Appended
+  /// after [_roasts] so the free rotation never shifts — a free sticker's
+  /// line is byte-stable whether or not the member pool exists.
+  static const List<String> _maxRoasts = [
+    'Max-member fit. The paywall was worth it for this one.',
+    'Unlimited stickers, unlimited nerve. We approve.',
+    'This is what the good side of the paywall looks like.',
+    'Premium drip, premium sticker. The math works.',
+    'Your subscription just struck a pose.',
+    'Thirty stickers was merely the opening act.',
+    'Max energy, meet maximum outfit.',
+    'The algorithm bows to this fit. So do we.',
+    'Rent-free in our heads, worth every cent in yours.',
+    'This look bills monthly: iconic, recurring.',
+    'Gatekept? Never. This fit is for the feed.',
+    'Somewhere a free trial just expired from jealousy.',
+    'Certified Max moment. Frame it twice.',
+    'Your closet pays dividends. Collect in compliments.',
+    'Beyond the gate, the fits hit different. Case in point.',
+  ];
+
   /// Deterministic pick per sticker, so a sticker's roast is stable
   /// across opens. Bump [salt] (e.g. refresh button) for a new line.
-  static String roastFor(OutfitSticker sticker, {int salt = 0}) =>
-      roastForId(sticker.id, salt: salt);
+  /// [isMax] opens the member-exclusive pool on top of the free one.
+  static String roastFor(
+    OutfitSticker sticker, {
+    int salt = 0,
+    bool isMax = false,
+  }) =>
+      roastForId(sticker.id, salt: salt, isMax: isMax);
 
   /// Same pick by raw id — for cutouts that aren't saved stickers yet
   /// (e.g. the onboarding Aura reveal).
-  static String roastForId(String id, {int salt = 0}) {
+  static String roastForId(String id, {int salt = 0, bool isMax = false}) {
     final h = id.hashCode ^ salt;
-    return _roasts[h.abs() % _roasts.length];
+    final free = _roasts.length;
+    final total = free + (isMax ? _maxRoasts.length : 0);
+    final pick = h.abs() % total;
+    return pick < free ? _roasts[pick] : _maxRoasts[pick - free];
   }
 
   /// Number of lines in the rotation (for tests/debug).

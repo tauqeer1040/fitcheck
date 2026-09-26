@@ -9,6 +9,7 @@ import '../models/outfit_sticker.dart';
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
 import '../services/analytics_service.dart';
+import '../services/revenuecat_service.dart';
 import '../services/roast_service.dart';
 import '../services/sticker_share_service.dart';
 import '../services/sticker_style_service.dart';
@@ -244,7 +245,10 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
                   // Permanent joke: fixed salt 0 makes the roast a pure
                   // function of the sticker — identical every open.
                   child: Text(
-                    RoastService.roastFor(widget.sticker),
+                    RoastService.roastFor(
+                      widget.sticker,
+                      isMax: RevenueCatService.instance.isPro,
+                    ),
                     style: const TextStyle(
                       color: Colors.white,
                       fontStyle: FontStyle.italic,

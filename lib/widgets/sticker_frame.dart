@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -159,11 +161,6 @@ class StickerFrameField extends StatefulWidget {
   /// still reads as the border in front of everything.
   final bool particlesOnTop;
 
-  /// Screen-space band where the grab layer must not claim pointers — the
-  /// flow's CTA row. Stickers still draw there; they just cannot eat a
-  /// tap aimed at a Back / Continue button sitting under them.
-  final Rect? grabExclusion;
-
   const StickerFrameField({
     super.key,
     required this.child,
@@ -171,7 +168,6 @@ class StickerFrameField extends StatefulWidget {
     this.onMetrics,
     this.autoBurst = false,
     this.particlesOnTop = false,
-    this.grabExclusion,
   });
 
   @override
@@ -183,6 +179,9 @@ class StickerFrameFieldState extends State<StickerFrameField>
   List<Sprite>? _sprites;
   bool _launched = false;
   bool _autoBurstFired = false;
+
+  /// Slot in [_sprites] holding the live cutout sprite (see [_flyCutout]).
+  int? _cutoutSpriteIndex;
 
   final List<_FrameParticle> _particles = [];
   final ValueNotifier<int> _tick = ValueNotifier(0);
@@ -379,6 +378,12 @@ class StickerFrameFieldState extends State<StickerFrameField>
     required int count,
     required int shapeIndex,
     required int color,
+    // The cutout itself IS the fan here: [count] copies of the sticker, so it
+    // never shares a line with a shape. It is decoded async and flown when
+    // its art lands — the slight lag reads as a follow-through, not a miss.
+    String? cutoutPath,
+    int? cutoutShapeIndex,
+    int? cutoutColor,
   }) {
     if (!_spawned || _size.width <= 0 || _size.height <= 0) return;
     final n = count.clamp(1, 12);
@@ -388,6 +393,24 @@ class StickerFrameFieldState extends State<StickerFrameField>
     // the jitter keeps the spacing from reading as a clock face.
     final start = rng.nextDouble() * perimeter;
     final step = perimeter / n;
+    final cutout = cutoutPath;
+    if (cutout != null) {
+      // The fan is copies of the sticker itself: no flat shapes.
+      final slots = <double>[
+        for (var i = 0; i < n; i++)
+          (start + i * step + (rng.nextDouble() - 0.5) * step * 0.45) %
+              perimeter,
+      ];
+      unawaited(
+        _flyCutouts(
+          slots,
+          cutout,
+          cutoutShapeIndex ?? shapeIndex,
+          cutoutColor ?? color,
+        ),
+      );
+      return;
+    }
     for (var i = 0; i < n; i++) {
       final jitter = (rng.nextDouble() - 0.5) * step * 0.45;
       flyShapeToBorder(
@@ -398,10 +421,70 @@ class StickerFrameFieldState extends State<StickerFrameField>
     }
   }
 
+  /// Decodes the Aura cutout once into a sprite and flies it to every slot
+  /// with the same spring flight the lone shapes use — the sticker itself
+  /// joins the border, on its M3 card, instead of only its echoes.
+  Future<void> _flyCutouts(
+    List<double> perimeterSlots,
+    String path,
+    int shapeIndex,
+    int color,
+  ) async {
+    try {
+      final bytes = await File(path).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes, targetWidth: 220);
+      final image = (await codec.getNextFrame()).image;
+      if (!mounted || !_spawned || _sprites == null) {
+        debugPrint('[pick] cutout fly skipped: frame not ready');
+        return;
+      }
+      final sprite = Sprite(
+        image: image,
+        shapeIndex: shapeIndex,
+        dominantColor: color,
+      );
+      var sprites = _sprites!;
+      var idx = _cutoutSpriteIndex;
+      if (idx == null || idx < 0 || idx >= sprites.length) {
+        // First cutout flight: detach from the shared memoized set into a
+        // per-frame copy. Appending straight on would leak one sprite per
+        // reveal into every frame alive.
+        sprites = [...sprites, sprite];
+        idx = sprites.length - 1;
+        _cutoutSpriteIndex = idx;
+      } else {
+        sprites[idx] = sprite;
+      }
+      _sprites = sprites;
+      for (final slot in perimeterSlots) {
+        flyShapeToBorder(
+          shapeIndex: shapeIndex,
+          color: color,
+          perimeter: slot,
+          imgIndex: idx,
+          rim: true,
+          measure: false,
+        );
+      }
+      debugPrint('[pick] cutouts flown n=${perimeterSlots.length} idx=$idx');
+    } catch (e) {
+      debugPrint('[pick] cutout fly failed: $e');
+    }
+  }
+
   void flyShapeToBorder({
     required int shapeIndex,
     required int color,
     double? perimeter,
+    // When set, flies that sprite's art on its shape card instead of a
+    // flat lone shape — how the Aura cutout joins the border itself.
+    int? imgIndex,
+    // White rim like the flat shapes, so explosion stickers read as one
+    // set with them.
+    bool rim = false,
+    // Latecomers that must not move the copy box: they may overlap the
+    // text instead, and the user drags them aside.
+    bool measure = true,
   }) {
     if (!_spawned || _size.width <= 0 || _size.height <= 0) return;
     final sprites = _sprites;
@@ -422,11 +505,15 @@ class StickerFrameFieldState extends State<StickerFrameField>
           )
         : _walkTo(frame, perimeter);
     final horizontal = edge == _Edge.top || edge == _Edge.bottom;
+    // Rimmed (sticker) flights read smaller than a flat shape in the same
+    // box — the card is only 0.7 of it — so they get a 1.4x presence
+    // match. Stays well under the old 2x hero that shoved the copy box.
     final box =
         sizeMultiplier *
         (horizontal
             ? 76.0 + rng.nextDouble() * 26
-            : 54.0 + rng.nextDouble() * 16);
+            : 54.0 + rng.nextDouble() * 16) *
+        (rim ? 1.4 : 1.0);
     final half = box / 2 * _overshoot;
     final claimBleed = 0.16 + rng.nextDouble() * 0.14;
     final target = _place(
@@ -437,8 +524,11 @@ class StickerFrameFieldState extends State<StickerFrameField>
       claimBleed,
     );
     // Lone shapes are square: same band math both ways. A claim landing
-    // deeper than the burst re-pads the copy box live.
-    _trackDepth(horizontal: horizontal, perpArt: box, bleed: claimBleed);
+    // deeper than the burst re-pads the copy box live — unless the flight
+    // opts out, so newcomers can overlap the copy instead of shrinking it.
+    if (measure) {
+      _trackDepth(horizontal: horizontal, perpArt: box, bleed: claimBleed);
+    }
     final origin =
         Offset(_size.width / 2, _size.height * StickerArt.originY) +
         Offset.fromDirection(
@@ -461,10 +551,11 @@ class StickerFrameFieldState extends State<StickerFrameField>
       target: target,
       angle: math.atan2(dir.dx, -dir.dy),
       size: box,
-      imgIndex: 0,
+      imgIndex: imgIndex ?? 0,
       shaped: true,
       shapeIndex: shapeIndex,
-      flatColor: color,
+      flatColor: imgIndex == null ? color : null,
+      rim: rim,
       delay: rng.nextDouble() * 0.05,
       travel: travel,
       omega: omega,
@@ -476,8 +567,15 @@ class StickerFrameFieldState extends State<StickerFrameField>
       particle.t = particle.delay + particle.travel;
     }
     _particles.add(particle);
+    debugPrint(
+      '[pick] flown img=${particle.imgIndex} shapeOnly=${particle.shapeOnly} '
+      'box=${particle.size.toStringAsFixed(0)} parts=${_particles.length} '
+      'sprites=${_sprites?.length}',
+    );
     _launched = true;
-    _emitMetrics();
+    // Unmeasured flights leave the copy box alone, so there is nothing
+    // new to report — and no reason to rebuild the flow for it.
+    if (measure) _emitMetrics();
     if (mounted) setState(() {});
     if (!_ticker.isActive) {
       _last = Duration.zero;
@@ -885,6 +983,33 @@ class StickerFrameFieldState extends State<StickerFrameField>
         // Behind the page: the content stays readable, and a sticker
         // being dragged slides under the cards rather than over them.
         if (paint != null && !widget.particlesOnTop) paint,
+        // Behind the page on purpose. A full-screen drag layer on TOP of the
+        // page is a magnet for taps meant for the page: the moment a border
+        // sticker's art overlaps a button, the sticker's bounds claim the tap
+        // and the button goes dead. Underneath the page, the page's own
+        // widgets always win — you can only pick up a sticker where nothing
+        // else is on top of it, which is the border band anyway.
+        if (paint != null && widget.draggable)
+          Positioned.fill(
+            key: const ValueKey('frameGrab'),
+            child: GestureDetector(
+              behavior: HitTestBehavior.deferToChild,
+              onPanStart: _onPanStart,
+              onPanUpdate: _onPanUpdate,
+              onPanEnd: _onPanEnd,
+              child: CustomPaint(
+                // A sizeless CustomPaint lays out at 0x0 and hit-tests
+                // nothing — without this the whole grab layer is a dead
+                // zero rect and no border sticker can ever be picked up.
+                size: _size,
+                painter: _GrabPainter(
+                  particles: _particles,
+                  sprites: sprites!,
+                  slop: _grabSlop,
+                ),
+              ),
+            ),
+          ),
         // Keyed on purpose. [particlesOnTop] moves the paint layer from
         // under the page to over it by reordering this list, and without
         // a key on the page the child swaps slots with the paint and
@@ -897,27 +1022,6 @@ class StickerFrameFieldState extends State<StickerFrameField>
         // In front of the page for the one page whose centerpiece is a
         // full-bleed visual, so the border still frames it.
         if (paint != null && widget.particlesOnTop) paint,
-        // Above the page, so a sticker can be picked up wherever it sits.
-        // Claims the pointer only inside a sticker, so a tap anywhere
-        // else still reaches the page underneath.
-        if (paint != null && widget.draggable)
-          Positioned.fill(
-            key: const ValueKey('frameGrab'),
-            child: GestureDetector(
-              behavior: HitTestBehavior.deferToChild,
-              onPanStart: _onPanStart,
-              onPanUpdate: _onPanUpdate,
-              onPanEnd: _onPanEnd,
-              child: CustomPaint(
-                painter: _GrabPainter(
-                  particles: _particles,
-                  sprites: sprites!,
-                  slop: _grabSlop,
-                  exclusion: widget.grabExclusion,
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -975,6 +1079,10 @@ class _FrameParticle {
   /// A lone shape: paints just the M3 silhouette, needs no sprite.
   bool get shapeOnly => flatColor != null;
 
+  /// White rim behind the card, like the lone shapes carry — the Aura
+  /// explosion stickers wear it so the fan reads as one set.
+  final bool rim;
+
   /// Lit this long after the detonation, seconds.
   final double delay;
 
@@ -1016,6 +1124,7 @@ class _FrameParticle {
     required this.pop,
     this.shapeIndex = 0,
     this.flatColor,
+    this.rim = false,
     this.omega = _still,
     this.zeta = 0.6,
     this.kick = 0.3,
@@ -1120,6 +1229,11 @@ class _FramePainter extends CustomPainter {
   final List<_FrameParticle> particles;
   final List<Sprite> sprites;
 
+  /// Particles already announced at paint, by identity — one line per
+  /// sticker per process, so a missing cutout leaves a precise hole:
+  /// "flown" without "painting" means the record never reached a painter.
+  static final _paintLogged = <int>{};
+
   /// Silhouette-to-art ratio, same as the grid's [ShapedSticker]: the
   /// card is 0.7 of the art box, so the cutout overflows it on all sides.
   static const _cardScale = 0.7;
@@ -1164,6 +1278,12 @@ class _FramePainter extends CustomPainter {
         continue;
       }
       final sprite = sprites[p.imgIndex];
+      if (_paintLogged.add(identityHashCode(p))) {
+        debugPrint(
+          '[pick] painting img=${p.imgIndex} shapeOnly=false '
+          'box=${p.size.toStringAsFixed(0)} sprites=${sprites.length}',
+        );
+      }
       final img = sprite.image;
       final aspect = img.height / img.width;
       if (p.shaped) {
@@ -1197,6 +1317,15 @@ class _FramePainter extends CustomPainter {
   ) {
     final art = p.artSize(aspect);
     final side = p.size * _cardScale * scale;
+    if (p.rim) {
+      canvas.save();
+      canvas.scale(side * 1.08 / 100);
+      canvas.drawPath(
+        _pathFor(sprite.shapeIndex),
+        Paint()..color = const Color(0xFFFFFFFF),
+      );
+      canvas.restore();
+    }
     canvas.save();
     canvas.scale(side / 100);
     canvas.drawPath(
@@ -1224,38 +1353,38 @@ class _FramePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_FramePainter oldDelegate) => false;
+
+  /// The paint layer is décor, never an interaction surface. Without this,
+  /// the base [CustomPainter.hitTest] returns null, which
+  /// [RenderCustomPaint.hitTestSelf] reads as a hit on the whole rect —
+  /// and [RenderStack] stops at the first child that hits. On the one page
+  /// where this layer sits IN FRONT of the content (Aura), that shadowed
+  /// the entire page: every tap stopped at the paint and no button under
+  /// it ever fired, with nothing in the log.
+  @override
+  bool hitTest(ui.Offset position) => false;
 }
 
 /// Invisible layer that exists only to answer "is there a sticker here?"
-/// for the drag layer above the page. It paints nothing, so the frame
+/// for the drag layer BEHIND the page. It paints nothing, so the frame
 /// itself still renders behind the content.
 class _GrabPainter extends CustomPainter {
   final List<_FrameParticle> particles;
   final List<Sprite> sprites;
   final double slop;
 
-  /// Band the grab layer refuses to claim (the page's CTA row). Without
-  /// it the layer is opaque to hit testing inside a sticker, so a border
-  /// sticker sitting over Back / Continue swallowed the tap before the
-  /// button could ever be hit — the button simply did nothing.
-  final ui.Rect? exclusion;
-
   const _GrabPainter({
     required this.particles,
     required this.sprites,
     required this.slop,
-    this.exclusion,
   });
 
   @override
   void paint(ui.Canvas canvas, ui.Size size) {}
 
   @override
-  bool? hitTest(ui.Offset position) {
-    final ex = exclusion;
-    if (ex != null && ex.contains(position)) return false;
-    return _particleAt(particles, sprites, position, slop) != null;
-  }
+  bool hitTest(ui.Offset position) =>
+      _particleAt(particles, sprites, position, slop) != null;
 
   @override
   bool shouldRepaint(_GrabPainter oldDelegate) => false;

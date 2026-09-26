@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_confetti/flutter_confetti.dart';
 import 'package:flutter_m3shapes/flutter_m3shapes.dart';
+import 'package:home_widget/home_widget.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
@@ -19,6 +21,7 @@ import '../services/analytics_service.dart';
 import '../services/growth_service.dart';
 import '../services/moment_paywall_service.dart';
 import '../services/notification_service.dart';
+import '../services/revenuecat_service.dart';
 import '../services/preset_stickers_service.dart';
 import '../services/roast_service.dart';
 import '../services/shape_unlock_service.dart';
@@ -99,26 +102,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   double get _effSide => _measuredSide + _copySide;
   double get _effTop => _measuredTop + _copyTop;
   double get _effBottom => _measuredTop + _copyBottom;
-
-  /// The CTA row's band, in the frame's own (full-window) coordinates.
-  /// The sticker grab layer is the topmost thing on screen and stops hit
-  /// testing inside a sticker, so a border sticker sitting over Back /
-  /// Continue swallowed the tap and the button did nothing. Handing the
-  /// band to the frame lets it stand aside there.
-  Rect? get _ctaExclusion {
-    final media = MediaQuery.of(context);
-    final rowBottom = media.size.height - media.padding.bottom - _effBottom;
-    debugPrint(
-      '[nav] ctaExclusion h=${media.size.height} padB=${media.padding.bottom} '
-      'effBottom=$_effBottom row=$rowBottom',
-    );
-    return Rect.fromLTRB(
-      0,
-      rowBottom - _CtaRow.height - 8,
-      media.size.width,
-      media.size.height,
-    );
-  }
 
   /// Set when the user backs out of the Aura reveal: the wish step should
   /// come up with the photo picker already open, because the only reason
@@ -201,9 +184,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     AppHaptics.milestone();
     final frame = _frameKey.currentState;
     for (var i = 0; i < 5; i++) {
+      // Unmeasured: the claim joins the border without moving the copy
+      // box — text never shrinks for a landing sticker, it just overlaps
+      // until dragged aside.
       frame?.flyShapeToBorder(
         shapeIndex: shapeIndexForQuestion(q),
         color: _bestowColors[q % _bestowColors.length],
+        measure: false,
       );
     }
     await Future<void>.delayed(const Duration(milliseconds: 700));
@@ -375,7 +362,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   /// The sticker landed on the Aura page: splash it into the border in five
   /// different directions — the same lone-shape flight the reward screens
-  /// fire, fanned so none share a line. Fires once, on the reveal.
+  /// fire, fanned so none share a line — and send the cutout itself along
+  /// on its own reserved slot. Fires once, on the reveal.
   void _onAuraRevealed() {
     final path = _cutoutPath;
     if (path == null) return;
@@ -384,17 +372,44 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       count: 5,
       shapeIndex: _cutoutStyle?.shapeIndex ?? fallbackShapeIndex(path),
       color: _cutoutStyle?.dominantColor ?? kFallbackStickerColor,
+      cutoutPath: path,
+      cutoutShapeIndex: _cutoutStyle?.shapeIndex ?? fallbackShapeIndex(path),
+      cutoutColor: _cutoutStyle?.dominantColor ?? kFallbackStickerColor,
     );
   }
 
-  /// Aura: file the cutout in the store (the same pass the gallery's save
-  /// does) and step to Sauce, still on the photo's colour.
-  Future<void> _onAuraContinue() async {
-    if (_cutoutPath != null && _cutoutId != null) {
-      await _celebrateCutout();
-    }
+  /// Sauce: the widget is verified on the homescreen — toast the blessing
+  /// and walk on by itself. The delayed step only fires if the user is
+  /// still on the Sauce page (a manual Continue or Back in the meantime
+  /// wins); the toast shows regardless, it confirms a real pin.
+  void _onSauceWidgetAdded() {
     if (!mounted) return;
+    AppHaptics.milestone();
+    _frostedToast('Homescreen blessed with Sauce.');
+    Future.delayed(const Duration(milliseconds: 1400), () {
+      if (!mounted || _index != _pages.indexOf('sauce')) return;
+      _next();
+    });
+  }
+
+  /// Frosted confirmation toast, styled exactly like the gallery's
+  /// 'Sticker removed' toast: transparent shell, floating, blurred dark
+  /// pill. Same builder serves the Sauce button's retry/unsupported
+  /// notes so every widget toast reads as one voice.
+  void _frostedToast(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(_frostedSnack(message));
+  }
+
+  /// Aura: step to Sauce first, then file the cutout in the store. The
+  /// disk write must never gate the page turn — if it stalls, the button
+  /// would look dead while the sticker just sits there.
+  Future<void> _onAuraContinue() async {
     _next();
+    if (_cutoutPath != null && _cutoutId != null) {
+      unawaited(_celebrateCutout());
+    }
   }
 
   /// Files the cutout in the store and clears it off the Aura page. The
@@ -670,7 +685,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'bestow_q5',
     'first_wish',
     'aura',
+    'rate',
     'sauce',
+    'review',
     'notifications',
   ];
 
@@ -680,6 +697,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// photo step and the preview does its work again.
   static const _firstWishIndex = 13;
   static const _auraIndex = 14;
+
+  /// him / her / them, off the Q1 gender answer. From the rating screen
+  /// on, the flow talks about the user in the third person with this —
+  /// the same voice the later review ask will borrow.
+  String _objectPronoun() {
+    switch (_answers[1]) {
+      case 'Woman':
+        return 'her';
+      case 'Man':
+        return 'him';
+      default:
+        // Non-binary, Prefer not to say, or unanswered.
+        return 'them';
+    }
+  }
 
   @override
   void dispose() {
@@ -843,10 +875,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 draggable: true,
                 onMetrics: _onFrameMetrics,
                 autoBurst: true,
-                // The CTA row keeps its taps even under a border sticker.
-                grabExclusion: _ctaExclusion,
-                // The Aura page is the sticker reveal, so the border frame
-                // has to paint in front of it there.
+                // The grab layer sits behind the page, so page taps always
+                // reach their intended widgets regardless of sticker art.
                 particlesOnTop: _index == _auraIndex,
                 child: Stack(
                   children: [
@@ -941,7 +971,31 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                                   copyTop: _effTop,
                                   ctaBottom: _effBottom,
                                 ),
+                                _RatePage(
+                                  onNext: _next,
+                                  // Back skips the spent Aura reveal (its
+                                  // sticker is already filed, so it would
+                                  // come up an empty dead end) and goes
+                                  // straight to picking another photo.
+                                  onBack: _backFromAura,
+                                  nameAndTitle: _nameAndTitle(),
+                                  pronoun: _objectPronoun(),
+                                  copySide: _effSide,
+                                  copyTop: _effTop,
+                                  ctaBottom: _effBottom,
+                                  ink: _screenInk,
+                                ),
                                 _SaucePage(
+                                  onNext: _next,
+                                  onBack: _back,
+                                  onWidgetAdded: _onSauceWidgetAdded,
+                                  nameAndTitle: _nameAndTitle(),
+                                  copySide: _effSide,
+                                  copyTop: _effTop,
+                                  ctaBottom: _effBottom,
+                                  ink: _screenInk,
+                                ),
+                                _ReviewPage(
                                   onNext: _next,
                                   onBack: _back,
                                   nameAndTitle: _nameAndTitle(),
@@ -1200,7 +1254,10 @@ class _AuraPageState extends State<_AuraPage>
     // No placeholder photo: the sticker appears only once it is made.
     final joke = path == null || widget.cutoutId == null
         ? ''
-        : RoastService.roastForId(widget.cutoutId!);
+        : RoastService.roastForId(
+            widget.cutoutId!,
+            isMax: RevenueCatService.instance.isPro,
+          );
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: widget.copySide),
@@ -1213,8 +1270,22 @@ class _AuraPageState extends State<_AuraPage>
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   SizedBox(height: widget.copyTop),
+                  if (widget.nameAndTitle.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        '${widget.nameAndTitle},',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: stickerTone.withValues(alpha: 0.75),
+                          fontSize: 16,
+                          fontStyle: FontStyle.italic,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   Text(
-                    '${widget.nameAndTitle}, I now bless thee with aura.',
+                    'I now bless thee with AURA.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: stickerTone,
@@ -1289,8 +1360,190 @@ class _AuraPageState extends State<_AuraPage>
           _CtaRow(
             onNext: path == null ? null : widget.onNext,
             onBack: widget.onBack,
-            nextLabel: 'Onwards',
+            nextLabel: 'continue',
           ),
+          SizedBox(height: widget.ctaBottom),
+        ],
+      ),
+    );
+  }
+}
+
+/// The self-rating trap, one page after the Aura reveal: rate yourself
+/// out of five stars. Anything under five gets the Dum Dum correction —
+/// the only passing grade is 5/5, which is exactly the muscle memory the
+/// post-homescreen Google review ask wants to borrow. The grade is saved
+/// (`self_rating_v1`) so that ask can echo it back later.
+class _RatePage extends StatefulWidget {
+  final VoidCallback onNext;
+  final VoidCallback onBack;
+
+  /// "Tauqeer the Hemperor" — the stored name plus its honorific.
+  final String nameAndTitle;
+
+  /// him / her / them, off the Q1 gender answer.
+  final String pronoun;
+
+  /// Copy color profiled from the photo — this page sits on the photo's
+  /// wash, not on black.
+  final Color ink;
+  final double copySide;
+  final double copyTop;
+  final double ctaBottom;
+  const _RatePage({
+    required this.onNext,
+    required this.onBack,
+    this.nameAndTitle = '',
+    this.pronoun = 'them',
+    this.ink = Colors.white,
+    this.copySide = 75,
+    this.copyTop = 75,
+    this.ctaBottom = 75,
+  });
+
+  @override
+  State<_RatePage> createState() => _RatePageState();
+}
+
+class _RatePageState extends State<_RatePage>
+    with SingleTickerProviderStateMixin {
+  int _rating = 0;
+
+  /// The "tap me" shimmer: loops while any star outline is on screen,
+  /// breathing the unpicked outlines between dim and bright.
+  late final AnimationController _shimmer = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pick(int value) async {
+    AppHaptics.step();
+    setState(() => _rating = value);
+    if (value == 5) AppHaptics.milestone();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('self_rating_v1', value);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final five = _rating == 5;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: widget.copySide),
+      child: Column(
+        children: [
+          SizedBox(height: widget.copyTop),
+          if (widget.nameAndTitle.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${widget.nameAndTitle},',
+                style: TextStyle(
+                  color: widget.ink.withValues(alpha: 0.75),
+                  fontSize: 16,
+                  fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          Text(
+            'Rate yourself',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'There\u2019s only one right answer here, and you already know it.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: widget.ink.withValues(alpha: 0.7),
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 28),
+          // The frame crowds this page hard, so the copy box can go
+          // narrow — the stars size themselves to whatever width is left
+          // instead of overflowing it.
+          AnimatedBuilder(
+            animation: _shimmer,
+            builder: (context, _) {
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final cell = math.min(constraints.maxWidth / 5, 58.0);
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (var i = 1; i <= 5; i++)
+                        SizedBox(
+                          width: cell,
+                          height: cell,
+                          child: IconButton(
+                            onPressed: () => _pick(i),
+                            iconSize: cell - 10,
+                            padding: EdgeInsets.zero,
+                            icon: Icon(
+                              i <= _rating
+                                  ? Icons.star_rounded
+                                  : Icons.star_outline_rounded,
+                              color: i <= _rating
+                                  ? const Color(0xFFFFD60A)
+                                  // Unpicked outlines breathe between dim
+                                  // and bright — the shimmer that says
+                                  // "tap me". Filled stars stay solid.
+                                  : widget.ink.withValues(
+                                      alpha:
+                                          0.30 + 0.35 * _shimmer.value,
+                                    ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+          const SizedBox(height: 14),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 80),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: Text(
+                _rating == 0
+                    ? 'Tap the stars. Don\u2019t be shy \u2014 you\u2019re the main character of StickerPants.'
+                    : five
+                    ? 'Correct. Look at ${widget.pronoun} \u2014 a perfect 5/5, like it was ever in doubt.'
+                    : 'No Dum Dum. Rate yourself 5/5 \u2014 that\u2019s a non-negotiable. You\u2019re the main character of StickerPants \u2014 look at ${widget.pronoun}, every inch a 5/5.',
+                key: ValueKey(
+                  _rating == 0 ? 'none' : five ? 'five' : 'scold',
+                ),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: five
+                      ? const Color(0xFFFFD60A)
+                      : widget.ink.withValues(alpha: 0.85),
+                  fontSize: 16,
+                  fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ),
+          const Spacer(flex: 1),
+          _CtaRow(onNext: five ? widget.onNext : null, onBack: widget.onBack),
           SizedBox(height: widget.ctaBottom),
         ],
       ),
@@ -1460,8 +1713,6 @@ class _CtaRow extends StatelessWidget {
   final VoidCallback? onBack;
   final String nextLabel;
 
-  /// Row height, shared with the flow so the grab layer knows which band
-  /// belongs to the buttons.
   static const height = 56.0;
   const _CtaRow({this.onNext, this.onBack, this.nextLabel = 'Continue'});
 
@@ -1532,6 +1783,114 @@ class _CtaRow extends StatelessWidget {
 }
 
 /// Shared page shell: hero visual, title, body, spacer, CTA row.
+/// The Google review ask, one page after Sauce: the user already rated
+/// themselves 5/5 on the rate screen, so echoing that back is just
+/// asking them to say it louder. "Not now" walks on; the notifications
+/// page after this one only shows when permission isn't already granted.
+class _ReviewPage extends StatefulWidget {
+  final VoidCallback onNext;
+  final VoidCallback onBack;
+
+  /// "Tauqeer the Hemperor" — the stored name plus its funny honorific.
+  final String nameAndTitle;
+
+  /// Copy color profiled from the photo (M3 on-color rule) — this page
+  /// sits on the photo's wash, not on black.
+  final Color ink;
+  final double copySide;
+  final double copyTop;
+  final double ctaBottom;
+  const _ReviewPage({
+    required this.onNext,
+    required this.onBack,
+    this.nameAndTitle = '',
+    this.ink = Colors.white,
+    this.copySide = 75,
+    this.copyTop = 75,
+    this.ctaBottom = 75,
+  });
+
+  @override
+  State<_ReviewPage> createState() => _ReviewPageState();
+}
+
+class _ReviewPageState extends State<_ReviewPage> {
+  bool _busy = false;
+
+  /// Opens the Play in-app review dialog (no-op on side-loaded builds),
+  /// then walks on either way — the ask itself is the moment.
+  Future<void> _rate() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await GrowthService.requestReview();
+    } catch (_) {}
+    widget.onNext();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: widget.copySide),
+      child: Column(
+        children: [
+          SizedBox(height: widget.copyTop),
+          if (widget.nameAndTitle.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${widget.nameAndTitle},',
+                style: TextStyle(
+                  color: widget.ink.withValues(alpha: 0.75),
+                  fontSize: 16,
+                  fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          const Text(
+            'Enjoying StickerPants?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Take a moment to rate us.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: widget.ink.withValues(alpha: 0.7),
+              fontSize: 15,
+            ),
+          ),
+          const Spacer(flex: 3),
+          _CtaRow(
+            onNext: _busy ? null : _rate,
+            onBack: _busy ? null : widget.onBack,
+            nextLabel: 'Rate us',
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: _busy ? null : widget.onNext,
+            child: Text(
+              'Not now',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+            ),
+          ),
+          // The link below the CTA would otherwise push Continue higher
+          // than every other screen: shrink this gutter by exactly that
+          // block (8px gap + ~48px link) so the button lands level.
+          SizedBox(height: (widget.ctaBottom - 56).clamp(8.0, 400.0)),
+        ],
+      ),
+    );
+  }
+}
+
 class _NotificationsPage extends StatefulWidget {
   final VoidCallback onNext;
   final VoidCallback onBack;
@@ -1612,9 +1971,7 @@ class _NotificationsPageState extends State<_NotificationsPage> {
           const Text('🔔', style: TextStyle(fontSize: 72)),
           const SizedBox(height: 28),
           Text(
-            widget.displayName.isNotEmpty
-                ? '${widget.displayName}, nudges that don\u2019t nag'
-                : 'Nudges that don\u2019t nag',
+            'Enable notifications',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 30,
@@ -2786,6 +3143,10 @@ class _SaucePage extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onBack;
 
+  /// Fired after the pin request goes out: the flow toasts the blessing
+  /// and walks on by itself.
+  final VoidCallback onWidgetAdded;
+
   /// "Tauqeer the Overdressed" — the stored name plus its funny honorific.
   final String nameAndTitle;
 
@@ -2798,6 +3159,7 @@ class _SaucePage extends StatelessWidget {
   const _SaucePage({
     required this.onNext,
     required this.onBack,
+    required this.onWidgetAdded,
     this.nameAndTitle = '',
     this.ink = Colors.white,
     this.copySide = 75,
@@ -2826,6 +3188,7 @@ class _SaucePage extends StatelessWidget {
               ),
             ),
           RichText(
+            textAlign: TextAlign.center,
             text: const TextSpan(
               style: TextStyle(
                 color: Colors.white,
@@ -2836,7 +3199,7 @@ class _SaucePage extends StatelessWidget {
               children: [
                 TextSpan(
                   text:
-                      'For Your Third Wish,\nI now bless thee '
+                      'For your last wish,\nI now bless thee '
                       'Homescreen\nwith ',
                 ),
                 TextSpan(
@@ -2848,16 +3211,15 @@ class _SaucePage extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: Alignment.center,
             child: Text(
-              nameAndTitle.isNotEmpty
-                  ? 'Add the homescreen widgets to keep your blessing close, $nameAndTitle.'
-                  : 'Add the homescreen widgets to keep the blessing close.',
+              'Your newly blessed sticker moves straight onto your homescreen — greeting you at every unlock with a witty praise that\u2019ll make you smile.',
+              textAlign: TextAlign.center,
               style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: 15),
             ),
           ),
           const Spacer(flex: 1),
-          _WidgetAddButton(),
+          _WidgetAddButton(onAdded: onWidgetAdded),
           const Spacer(flex: 1),
           _CtaRow(onNext: onNext, onBack: onBack),
           SizedBox(height: ctaBottom),
@@ -2867,9 +3229,41 @@ class _SaucePage extends StatelessWidget {
   }
 }
 
+/// Frosted toast shell shared by the Sauce widget confirmations — the
+/// gallery's 'Sticker removed' recipe: transparent SnackBar, floating
+/// blurred dark pill, white 14px copy.
+SnackBar _frostedSnack(String message) {
+  return SnackBar(
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    behavior: SnackBarBehavior.floating,
+    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    padding: EdgeInsets.zero,
+    duration: const Duration(seconds: 4),
+    content: ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          color: const Color(0xFF3A3A3C).withValues(alpha: 0.72),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Text(
+            message,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 /// The widget-add button on the Sauce page: pins the 2x3 latest-sticker
 /// widget, same call the dedicated widgets page used.
 class _WidgetAddButton extends StatefulWidget {
+  final VoidCallback? onAdded;
+
+  const _WidgetAddButton({this.onAdded});
+
   @override
   State<_WidgetAddButton> createState() => _WidgetAddButtonState();
 }
@@ -2877,24 +3271,92 @@ class _WidgetAddButton extends StatefulWidget {
 class _WidgetAddButtonState extends State<_WidgetAddButton> {
   bool _busy = false;
 
+  /// Pin requested, watching the homescreen for the new instance.
+  bool _waiting = false;
+
+  Future<Set<int>> _installedIds() async {
+    try {
+      final list = await HomeWidget.getInstalledWidgets();
+      return {
+        for (final w in list)
+          if (w.androidWidgetId != null) w.androidWidgetId!,
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  void _note(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(_frostedSnack(message));
+  }
+
   Future<void> _add() async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
+      // Some launchers can't pin at all — say so instead of opening a
+      // dialog to nowhere.
+      final supported = await HomeWidget.isRequestPinWidgetSupported();
+      if (!mounted) return;
+      if (supported != true) {
+        setState(() => _busy = false);
+        _note(
+          'This launcher can\u2019t pin widgets — long-press the homescreen '
+          'and pick StickerPants from the widget list.',
+        );
+        return;
+      }
+      final before = await _installedIds();
       await GrowthService.pinWidgets(
         androidName: 'LatestStickerWidgetProvider',
       );
+      if (!mounted) return;
+      // The pin call returns the moment the OS dialog shows, not when the
+      // user answers it — so the confirm only fires once a new instance
+      // actually appears on the homescreen.
+      setState(() => _waiting = true);
+      final pinned = await _waitForPin(before);
+      if (!mounted) return;
+      if (pinned) {
+        widget.onAdded?.call();
+      } else {
+        setState(() {
+          _busy = false;
+          _waiting = false;
+        });
+        _note('No widget yet — tap below to try again.');
+      }
     } catch (_) {
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _waiting = false;
+        });
+      }
     }
+  }
+
+  /// Polls the pinned instances until one appears that wasn't there
+  /// before the request. Covers launchers that never pause us (no resume
+  /// to listen for) as well as the normal dialog round-trip.
+  Future<bool> _waitForPin(Set<int> before) async {
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (!mounted) return false;
+      final after = await _installedIds();
+      if (after.difference(before).isNotEmpty) return true;
+    }
+    return false;
   }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 52,
+      height: 64,
       child: FilledButton(
         onPressed: _busy ? null : _add,
         style: FilledButton.styleFrom(
@@ -2915,9 +3377,14 @@ class _WidgetAddButtonState extends State<_WidgetAddButton> {
             // overflow it by ~50px.
             Flexible(
               child: Text(
-                _busy ? 'Opening…' : 'Add homescreen widgets',
-                maxLines: 1,
+                _waiting
+                    ? 'Check your homescreen…'
+                    : _busy
+                    ? 'Opening…'
+                    : 'Add homescreen widgets',
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 15.5,
                   fontWeight: FontWeight.w800,
