@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/analytics_service.dart';
+import '../services/moment_paywall_service.dart';
 import '../services/preset_stickers_service.dart';
 import '../services/revenuecat_service.dart';
 import 'gallery_screen.dart';
+import 'onboarding_flow.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -21,6 +23,8 @@ class _SplashScreenState extends State<SplashScreen>
   bool _isTargetReady = false;
   bool _isTimerDone = false;
   bool _splashFadedOut = false;
+  bool _onboardingDone = false;
+  bool _paywallRequested = false;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
@@ -43,6 +47,9 @@ class _SplashScreenState extends State<SplashScreen>
         setState(() {
           _splashFadedOut = true;
         });
+        // Splash is out of the way, so the launch paywall can go up over
+        // the gallery instead of behind the splash fade.
+        unawaited(_showLaunchPaywall());
       }
     });
 
@@ -69,12 +76,17 @@ class _SplashScreenState extends State<SplashScreen>
     AnalyticsService.instance.logAppOpen();
 
     // First-run gate: onboarding owns the first session; returning
-    // users go straight home.
-    //
-    // Onboarding SKIPPED for now: home loads directly on every launch.
-    // (OnboardingFlow still writes `onboarding_completed_v1` when run.)
-    await SharedPreferences.getInstance();
-
+    // users go straight home. Progress (step + answers) persists so a
+    // kill resumes mid-flow instead of restarting.
+    final prefs = await SharedPreferences.getInstance();
+    final completed = prefs.getBool('onboarding_completed_v1') ?? false;
+    // A saved non-zero step means the flow is mid-flight, and that beats
+    // the completion flag: otherwise a run started after an earlier one
+    // finished would quit to the gallery and restart at Amen instead of
+    // picking up where it was left.
+    final resumeStep = prefs.getInt(OnboardingFlow.stepKey) ?? 0;
+    final onboardingDone = completed && resumeStep <= 0;
+    _onboardingDone = onboardingDone;
     // Ship with a wardrobe: the preset set lands in the store before the
     // gallery reads it, so a fresh install never opens on the empty
     // state. One-shot, and a no-op on any store that already has
@@ -82,10 +94,19 @@ class _SplashScreenState extends State<SplashScreen>
     await PresetStickersService.ensureSeeded();
 
     if (!mounted) return;
-    setState(() {
-      _targetScreen = GalleryScreen(onReady: _onTargetReady);
-      _isTargetReady = false;
-    });
+    if (onboardingDone) {
+      setState(() {
+        _targetScreen = GalleryScreen(onReady: _onTargetReady);
+        _isTargetReady = false;
+      });
+    } else {
+      // Onboarding has no onReady signal — mark ready so the splash
+      // fades on the timer alone.
+      setState(() {
+        _targetScreen = const OnboardingFlow();
+        _isTargetReady = true;
+      });
+    }
 
     await timer;
     if (mounted) {
@@ -103,6 +124,24 @@ class _SplashScreenState extends State<SplashScreen>
         _checkTransition();
       });
     }
+  }
+
+  /// Every launch after onboarding is finished opens on the RevenueCat
+  /// paywall. Dismissible ([locked] false), forced past the frequency
+  /// caps, and Pro users never see it.
+  Future<void> _showLaunchPaywall() async {
+    if (_paywallRequested || !_onboardingDone) return;
+    _paywallRequested = true;
+    try {
+      await RevenueCatService.instance.ensureInitialized();
+      if (!mounted || RevenueCatService.instance.isPro) return;
+      await MomentPaywallService.maybeShow(
+        context,
+        placement: 'app_launch',
+        locked: false,
+        force: true,
+      );
+    } catch (_) {}
   }
 
   void _checkTransition() {

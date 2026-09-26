@@ -69,6 +69,11 @@ class StickerGrid extends StatefulWidget {
   final VoidCallback? onPreviewSheets;
   final VoidCallback? onOnboarding;
 
+  /// Debug fast-forward: opens onboarding already on one of its own
+  /// pages (the photo picker, the Aura reveal) — the flow's page name is
+  /// passed through.
+  final ValueChanged<String>? onOnboardingAt;
+
   /// Per-type notification state + toggle (debug card).
   final ValueChanged<String>? onToggleNotif;
 
@@ -107,6 +112,7 @@ class StickerGrid extends StatefulWidget {
     this.onPro,
     this.onPreviewSheets,
     this.onOnboarding,
+    this.onOnboardingAt,
     this.onToggleNotif,
     this.m3Thumbs = false,
     this.onToggleM3Thumbs,
@@ -532,6 +538,19 @@ class _StickerGridState extends State<StickerGrid>
                     icon: Icons.waving_hand_rounded,
                     label: 'Onboard',
                     onTap: widget.onOnboarding,
+                  ),
+                  // Fast-forward entries: the two pages the pick → preview
+                  // → reveal handoff lives on, reusing the flow's own
+                  // pages so there is nothing to walk to reach them.
+                  _DebugBtn(
+                    icon: Icons.add_photo_alternate_outlined,
+                    label: 'Picker',
+                    onTap: () => widget.onOnboardingAt?.call('first_wish'),
+                  ),
+                  _DebugBtn(
+                    icon: Icons.auto_awesome_outlined,
+                    label: 'Aura',
+                    onTap: () => widget.onOnboardingAt?.call('aura'),
                   ),
                 ],
               ),

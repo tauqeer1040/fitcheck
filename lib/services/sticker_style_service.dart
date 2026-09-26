@@ -102,7 +102,10 @@ class StickerStyleService {
       final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       image.dispose();
       if (bytes == null) {
-        return StickerStyle(dominantColor: neutralColor, shapeIndex: shapeIndex);
+        return StickerStyle(
+          dominantColor: neutralColor,
+          shapeIndex: shapeIndex,
+        );
       }
 
       // rawRgba bytes -> ARGB ints for the quantizer (it expects
@@ -117,13 +120,19 @@ class StickerStyleService {
         );
       }
       if (pixels.isEmpty) {
-        return StickerStyle(dominantColor: neutralColor, shapeIndex: shapeIndex);
+        return StickerStyle(
+          dominantColor: neutralColor,
+          shapeIndex: shapeIndex,
+        );
       }
 
       final quantizer = await QuantizerCelebi().quantize(pixels, 64);
       final colorToCount = quantizer.colorToCount;
       if (colorToCount.isEmpty) {
-        return StickerStyle(dominantColor: neutralColor, shapeIndex: shapeIndex);
+        return StickerStyle(
+          dominantColor: neutralColor,
+          shapeIndex: shapeIndex,
+        );
       }
 
       // The scorer wants the population map directly; it always returns
@@ -171,5 +180,100 @@ class StickerStyleService {
     } catch (_) {
       return kFallbackStickerColor;
     }
+  }
+
+  /// Readable text color for copy sitting on [background], profiled from
+  /// the IMAGE the same way the wash is: the M3 tonal palette for the
+  /// photo's hue, then the most COLORFUL tone of that palette which still
+  /// clears WCAG AA (4.5:1) against the color actually on screen.
+  ///
+  /// The M3 on-color rule on its own (tone 0 for a light key, tone 100 for
+  /// a dark one) always lands on near-black or near-white, which is why the
+  /// copy kept reading as plain black/white: those are the only tones the
+  /// rule ever considers. Same palette, but searched for a tone with real
+  /// chroma in it — so a photo's own teal, clay or plum carries the words,
+  /// and legibility is a filter rather than the whole rule.
+  ///
+  /// If no tone in the palette clears AA (a palette that flat cannot happen
+  /// — tone 0 and 100 always do), the best-contrast tone wins.
+  static int readableInkOn(int background) {
+    const aaBodyText = 4.5;
+    try {
+      final key = Hct.fromInt(background);
+      final palette = TonalPalette.of(key.hue, 48.0);
+      var best = 0;
+      var bestScore = -1.0;
+      var fallback = palette.get(key.tone > 50 ? 0 : 100);
+      var fallbackRatio = _contrastRatio(fallback, background);
+      for (var tone = 0; tone <= 100; tone += 2) {
+        final argb = palette.get(tone);
+        final ratio = _contrastRatio(argb, background);
+        if (ratio > fallbackRatio) {
+          fallbackRatio = ratio;
+          fallback = argb;
+        }
+        if (ratio < aaBodyText) continue;
+        // Among the readable tones, the most saturated one wins; contrast
+        // breaks ties so two equally chromatic tones take the safer one.
+        final chroma = Hct.fromInt(argb).chroma;
+        final score = chroma * 100 + ratio;
+        if (score > bestScore) {
+          bestScore = score;
+          best = argb;
+        }
+      }
+      return best == 0 ? fallback : best;
+    } catch (_) {
+      return _contrastRatio(0xFFFFFFFF, background) >=
+              _contrastRatio(0xFF0B0B0C, background)
+          ? 0xFFFFFFFF
+          : 0xFF0B0B0C;
+    }
+  }
+
+  /// The backing-card tone for a sticker shown on [background]: the same
+  /// M3 tonal palette as [readableInkOn], stepped AWAY from the
+  /// background's tone so the silhouette behind a cutout actually reads.
+  ///
+  /// A card in the background's own color is invisible — which is what a
+  /// fullscreen wash of the photo's dominant color used to produce. Same
+  /// hue, same chroma family, just the far side of the ramp, so the card
+  /// still belongs to the photo.
+  static int cardToneOn(int background) {
+    try {
+      final key = Hct.fromInt(background);
+      final palette = TonalPalette.of(key.hue, 36.0);
+      // Walk away from the background's tone until the card separates
+      // clearly (2.5:1 is plenty for a shape behind a cutout — the art on
+      // top carries the read, the card only has to be seen).
+      final step = key.tone > 50 ? -1 : 1;
+      var tone = key.tone.round();
+      for (var i = 0; i < 100; i++) {
+        if (_contrastRatio(palette.get(tone), background) >= 2.5) {
+          return palette.get(tone);
+        }
+        tone = (tone + step).clamp(0, 100);
+      }
+      return palette.get(step > 0 ? 100 : 0);
+    } catch (_) {
+      return 0xFF3A3A3C;
+    }
+  }
+
+  /// WCAG relative-luminance contrast ratio between two opaque ARGB ints.
+  static double _contrastRatio(int a, int b) {
+    final la = _relativeLuminance(a);
+    final lb = _relativeLuminance(b);
+    return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+  }
+
+  static double _relativeLuminance(int argb) {
+    double channel(double v) => v <= 0.03928
+        ? v / 12.92
+        : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+    final r = channel(((argb >> 16) & 0xFF) / 255);
+    final g = channel(((argb >> 8) & 0xFF) / 255);
+    final bl = channel((argb & 0xFF) / 255);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
   }
 }

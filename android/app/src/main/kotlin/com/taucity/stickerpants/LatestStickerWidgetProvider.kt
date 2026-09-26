@@ -64,8 +64,14 @@ class LatestStickerWidgetProvider : HomeWidgetProvider() {
                 val art = path?.takeIf { it.isNotEmpty() }
                     ?.let { WidgetBitmaps.decodeArt(it, artPx) }
                 if (art != null) {
+                    // contentScale 1.0: the silhouette fills the widget box
+                    // exactly as the grid cell does (gallery passes
+                    // shapeScale 1.0 to ShapedSticker), so the homescreen
+                    // matches the in-app proportions instead of floating at
+                    // 70% of the cutout.
                     val frames = WidgetShapes.renderSilhouetteFrames(
                         shape, framePx, color, frameCount,
+                        contentScale = 1.0f,
                     )
                     removeAllViews(R.id.widget_spin)
                     for (bmp in frames) {

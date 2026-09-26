@@ -34,6 +34,12 @@ class PhotoPreviewScreen extends StatefulWidget {
   /// cutout, no save. True restores the full cutout flow.
   final bool autoCutout;
 
+  /// Onboarding runs this screen as a cutout step, not a destination:
+  /// there is nothing to go back to and nothing to wait for. The close
+  /// button goes away, and the cutout saves the instant it lands instead
+  /// of lifting and waiting out the idle beat.
+  final bool autoAdvance;
+
   /// Hero tag shared with the gallery thumbnail that opened this screen,
   /// so the pick flies open like an app launch. Null when there is no
   /// thumbnail behind it (previews opened from elsewhere).
@@ -52,6 +58,7 @@ class PhotoPreviewScreen extends StatefulWidget {
     this.pickHeroTag,
     this.onSaved,
     this.autoCutout = false,
+    this.autoAdvance = false,
   });
 
   @override
@@ -187,8 +194,10 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
 
     // Fallback: if the route never reports 'completed' (tests, embedders),
     // start anyway after a beat.
-    _routeFallbackTimer =
-        Timer(const Duration(milliseconds: 450), _beginProcessing);
+    _routeFallbackTimer = Timer(
+      const Duration(milliseconds: 450),
+      _beginProcessing,
+    );
     _loadBgTint();
     _loadImageAspect();
   }
@@ -197,9 +206,7 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   /// aspect, so the outline square can hug the art's shorter edge.
   Future<void> _loadImageAspect() async {
     try {
-      final buffer = await ui.ImmutableBuffer.fromFilePath(
-        widget.imagePath,
-      );
+      final buffer = await ui.ImmutableBuffer.fromFilePath(widget.imagePath);
       final desc = await ui.ImageDescriptor.encoded(buffer);
       final w = desc.width.toDouble();
       final h = desc.height.toDouble();
@@ -293,6 +300,16 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
           _cutoutPath = savedPath;
           _state = _CutoutState.idle;
         });
+        // Cutout step (onboarding): the preview is deliberately brief —
+        // it only ever shows the picked photo and the silver shimmer
+        // while the subject is cut out. The instant the cutout lands,
+        // file it with the flow and leave WITHOUT rendering it here: the
+        // Aura page owns the one and only reveal, so the cutout never
+        // flashes in this route's pop transition.
+        if (widget.autoAdvance) {
+          _handoffAndPop(savedPath, style);
+          return;
+        }
         // Auto-lift NOW: the cutout pops up first, while the photo is
         // still full-size behind it...
         _startLift();
@@ -336,11 +353,7 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   /// The old 200/14 spring was slow and flat — the cutout slid into
   /// place instead of bopping in.
   static final SpringDescription _popSpring =
-      SpringDescription.withDampingRatio(
-    mass: 1,
-    stiffness: 300,
-    ratio: 0.62,
-  );
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 300, ratio: 0.62);
 
   void _startLift() {
     if (_state == _CutoutState.floating) return;
@@ -348,9 +361,9 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     AppHaptics.tap();
     setState(() => _state = _CutoutState.lifted);
     _liftController.reset();
-    _liftController.animateWith(
-      SpringSimulation(_popSpring, 0, 1, 0),
-    ).then((_) {
+    _liftController.animateWith(SpringSimulation(_popSpring, 0, 1, 0)).then((
+      _,
+    ) {
       if (mounted) {
         _bobController.repeat();
         // Auto-add after 4s untouched. Any grab cancels this; every
@@ -363,6 +376,17 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     });
   }
 
+  /// Onboarding cutout step: hand the finished cutout back to the flow
+  /// and pop immediately. Unlike [_startFloat] this never shows the
+  /// cutout here — no lift, no bob, no flick — because the Aura page
+  /// plays the reveal the user actually arrives on.
+  void _handoffAndPop(String path, StickerStyle style) {
+    _idleTimer?.cancel();
+    _bobController.stop();
+    widget.onSaved?.call(path, style);
+    _finishAndPop();
+  }
+
   /// Every release is a flick: insert the cell at home and pop so the
   /// sticker flies straight into its grid slot.
   void _startFloat() {
@@ -372,7 +396,8 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     setState(() => _state = _CutoutState.floating);
     _bobController.stop();
     if (path != null) {
-      final style = _style ??
+      final style =
+          _style ??
           StickerStyle(
             dominantColor: kFallbackStickerColor,
             shapeIndex: fallbackShapeIndex(path),
@@ -420,8 +445,8 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   bool get _isCutoutVisible =>
       _cutoutPath != null &&
       (_state == _CutoutState.lifted ||
-       _state == _CutoutState.dragging ||
-       _state == _CutoutState.floating);
+          _state == _CutoutState.dragging ||
+          _state == _CutoutState.floating);
 
   /// Silhouette card scale for the cutout. While lifted/dragging it
   /// rides the pop spring (0 → 1, overshoot included) so the shape
@@ -430,8 +455,8 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   /// once the cutout does).
   double get _shapeCardScale =>
       (_state == _CutoutState.lifted || _state == _CutoutState.dragging)
-          ? _liftController.value.clamp(0.0, 1.4)
-          : 0.0;
+      ? _liftController.value.clamp(0.0, 1.4)
+      : 0.0;
 
   double _getScale() {
     switch (_state) {
@@ -480,12 +505,17 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     final left = (size.width - displayW) / 2;
     final top = (size.height - displayH) / 2;
     // Clamp fully on-screen with a small margin, per the edge-case spec.
-    final clampedLeft = left
-        .clamp(12.0, math.max(12.0, size.width - displayW - 12));
+    final clampedLeft = left.clamp(
+      12.0,
+      math.max(12.0, size.width - displayW - 12),
+    );
     final clampedTop = top.clamp(
+      MediaQuery.of(context).padding.top + 12,
+      math.max(
         MediaQuery.of(context).padding.top + 12,
-        math.max(MediaQuery.of(context).padding.top + 12,
-            size.height - displayH - 12));
+        size.height - displayH - 12,
+      ),
+    );
     return Offset(clampedLeft.toDouble(), clampedTop.toDouble());
   }
 
@@ -506,15 +536,12 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     final tFade = Curves.easeInOutCubic.transform(_collapse.clamp(0.0, 1.0));
     // Crossfade only: the box still collapses on the pop spring's own
     // timing above. This is the slow half of the swap.
-    final tPhoto = Curves.easeInOutCubic.transform(
-      _photoFade.clamp(0.0, 1.0),
-    );
+    final tPhoto = Curves.easeInOutCubic.transform(_photoFade.clamp(0.0, 1.0));
     final w = ui.lerpDouble(bgW, targetW, tMove) ?? bgW;
     final h = ui.lerpDouble(bgH, targetH, tFade) ?? bgH;
     // The morphing shape has to outlive the cutout's arrival: it is the
     // color's landing pad, so it stays mounted until the shrink lands.
-    final morphing =
-        _state == _CutoutState.processing || _bgAlpha > 0.0;
+    final morphing = _state == _CutoutState.processing || _bgAlpha > 0.0;
     final shaped = Stack(
       alignment: Alignment.center,
       children: [
@@ -558,8 +585,9 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                     // Profile hue outside the shape: the photo only
                     // shows through the shape's own window, and the wash
                     // fades rather than snapping.
-                    outsideColor:
-                        _bgTint?.withValues(alpha: _bgAlpha * _landed),
+                    outsideColor: _bgTint?.withValues(
+                      alpha: _bgAlpha * _landed,
+                    ),
                     // Hug the photo: landscape → its height, portrait
                     // → its width (null until the header read lands).
                     childAspectRatio: _imageAspect,
@@ -637,11 +665,7 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   Widget _pickHero(Widget child) {
     final tag = widget.pickHeroTag;
     if (tag == null) return child;
-    return Hero(
-      tag: tag,
-      createRectTween: stickerFlightTween,
-      child: child,
-    );
+    return Hero(tag: tag, createRectTween: stickerFlightTween, child: child);
   }
 
   /// How far the pick flight has landed: 0 while the tapped thumbnail is
@@ -717,8 +741,10 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     // the cutout that pops in here — its M3 shadow included — is already
     // the size it will be when the sticker is opened full screen.
     final cutoutDisplayW = size.width * 0.8;
-    final cutoutDisplayH =
-        (size.width * 0.8 * 4 / 3).clamp(0.0, size.height * 0.55);
+    final cutoutDisplayH = (size.width * 0.8 * 4 / 3).clamp(
+      0.0,
+      size.height * 0.55,
+    );
 
     return Scaffold(
       // Transparent route, but the screen itself is filled edge to edge
@@ -738,9 +764,7 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
             child: ClipRect(
               child: BackdropFilter(
                 filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.20),
-                ),
+                child: Container(color: Colors.black.withValues(alpha: 0.20)),
               ),
             ),
           ),
@@ -755,11 +779,8 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
             onLongPress: _state == _CutoutState.idle ? _onLongPress : null,
             child: _pickHero(
               _routeRevealed(
-                () => _buildBackgroundPhoto(
-                  size,
-                  cutoutDisplayW,
-                  cutoutDisplayH,
-                ),
+                () =>
+                    _buildBackgroundPhoto(size, cutoutDisplayW, cutoutDisplayH),
               ),
             ),
           ),
@@ -778,77 +799,88 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
           // into the matching grid cell. Sits dead-center from the
           // moment it's made; drag offset applies on top afterwards.
           if (_isCutoutVisible)
-            Builder(builder: (context) {
-              final origin =
-                  _floatOrigin(size, cutoutDisplayW, cutoutDisplayH);
-              return Positioned(
-                left: origin.dx + _getStickerOffset().dx,
-                top: origin.dy +
-                    _getStickerOffset().dy +
-                    _getBobY(),
-              child: GestureDetector(
-                // Tap the sticker to accept it: same path home as a flick,
-                // just without the throw.
-                onTap: _onTapAccept,
-                onPanStart: _state == _CutoutState.lifted ? _onDragStart : null,
-                onPanUpdate: _state == _CutoutState.lifted || _state == _CutoutState.dragging
-                    ? _onDragUpdate : null,
-                onPanEnd: _state == _CutoutState.dragging ? _onDragEnd : null,
-                child: Hero(
-                  tag: widget.heroTag,
-                  // Curved arc home, matching the grid cell.
-                  createRectTween: stickerFlightTween,
-                  child: Transform.scale(
-                    scale: _getScale(),
-                  child: Opacity(
-                    opacity: _getOpacity(),
-                    child: RepaintBoundary(
-                      // Pixel "Shape" reveal: art lifts first, then the
-                      // solid dominant-color silhouette springs in behind
-                      // it. Identical structure to the grid cell, so the
-                      // Hero flight is a true morph.
-                      child: ShapedSticker(
-                        imagePath: _cutoutPath!,
-                        shapeIndex: _shapeIndex,
-                        dominantColor:
-                            _style?.dominantColor ?? kFallbackStickerColor,
-                        width: cutoutDisplayW,
-                        height: cutoutDisplayH,
-                        cardScale: _shapeCardScale,
-                        // Full-bleed silhouette (same as fullscreen): the
-                        // shadow is the box, not 70% of it.
-                        shapeScale: 1.0,
-                        // The shadow the color collapsed into keeps
-                        // turning — the outline became a solid M3 shape
-                        // rather than stopping dead.
-                        rotateSilhouette: true,
+            Builder(
+              builder: (context) {
+                final origin = _floatOrigin(
+                  size,
+                  cutoutDisplayW,
+                  cutoutDisplayH,
+                );
+                return Positioned(
+                  left: origin.dx + _getStickerOffset().dx,
+                  top: origin.dy + _getStickerOffset().dy + _getBobY(),
+                  child: GestureDetector(
+                    // Tap the sticker to accept it: same path home as a flick,
+                    // just without the throw.
+                    onTap: _onTapAccept,
+                    onPanStart: _state == _CutoutState.lifted
+                        ? _onDragStart
+                        : null,
+                    onPanUpdate:
+                        _state == _CutoutState.lifted ||
+                            _state == _CutoutState.dragging
+                        ? _onDragUpdate
+                        : null,
+                    onPanEnd: _state == _CutoutState.dragging
+                        ? _onDragEnd
+                        : null,
+                    child: Hero(
+                      tag: widget.heroTag,
+                      // Curved arc home, matching the grid cell.
+                      createRectTween: stickerFlightTween,
+                      child: Transform.scale(
+                        scale: _getScale(),
+                        child: Opacity(
+                          opacity: _getOpacity(),
+                          child: RepaintBoundary(
+                            // Pixel "Shape" reveal: art lifts first, then the
+                            // solid dominant-color silhouette springs in behind
+                            // it. Identical structure to the grid cell, so the
+                            // Hero flight is a true morph.
+                            child: ShapedSticker(
+                              imagePath: _cutoutPath!,
+                              shapeIndex: _shapeIndex,
+                              dominantColor:
+                                  _style?.dominantColor ??
+                                  kFallbackStickerColor,
+                              width: cutoutDisplayW,
+                              height: cutoutDisplayH,
+                              cardScale: _shapeCardScale,
+                              // Full-bleed silhouette (same as fullscreen): the
+                              // shadow is the box, not 70% of it.
+                              shapeScale: 1.0,
+                              // The shadow the color collapsed into keeps
+                              // turning — the outline became a solid M3 shape
+                              // rather than stopping dead.
+                              rotateSilhouette: true,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                  ),
-                ),
-              ),
-            );
-            },
-          ),
-
-          // Close button
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 8,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
+                );
+              },
             ),
-          ),
+
+          // Close button. Hidden on the onboarding cutout step: there is
+          // nothing behind it to go back to.
+          if (!widget.autoAdvance)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 8,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
 
           // (No processing prompt: the silver shimmer wave over the
           // photo is the progress indicator.)
 
           // Hint once the sticker is ready (long-press still works,
           // but the sticker now lifts and saves on its own).
-          if (_state == _CutoutState.idle)
-            Positioned(
+          if (_state == _CutoutState.idle && !widget.autoAdvance)            Positioned(
               left: 0,
               right: 0,
               bottom: MediaQuery.of(context).padding.bottom + 32,
@@ -857,7 +889,9 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                   context,
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(20),
@@ -882,7 +916,9 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                   context,
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(20),

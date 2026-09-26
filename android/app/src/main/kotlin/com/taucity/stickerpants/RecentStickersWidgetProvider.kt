@@ -74,11 +74,13 @@ class RecentStickersWidgetProvider : HomeWidgetProvider() {
                     val art = path?.takeIf { it.isNotEmpty() }
                         ?.let { WidgetBitmaps.decodeArt(it) }
                     if (art != null) {
-                        // Blurred, upsized halo (2x5 only): soft overlay
-                        // glow behind each sticker.
+                        // Blurred halo (2x5 only): soft overlay glow behind
+                        // each sticker. contentScale 1.0 matches the grid
+                        // cell's silhouette (shapeScale 1.0), so the
+                        // homescreen and the gallery agree on proportion.
                         val frames = WidgetShapes.renderSilhouetteFrames(
                             shape, framePx, color, frameCount,
-                            0.10f, 0.78f,
+                            0.10f, 1.0f,
                         )
                         removeAllViews(shapeIds[index])
                         for (bmp in frames) {

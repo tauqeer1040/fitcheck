@@ -69,7 +69,10 @@ class PresetStickersService {
 
       final seeded = <OutfitSticker>[];
       for (var i = 0; i < assets.length; i++) {
-        final id = 'preset_${(i + 1).toString().padLeft(2, '0')}';
+        // Deterministic id from the asset file: the onboarding unlock
+        // batches grant from the same pool with the same scheme, so a
+        // seeded sticker is never duplicated by an unlock.
+        final id = 'fit_${assets[i].split('/').last.replaceAll('.webp', '')}';
         try {
           final bytes = await rootBundle.load(assets[i]);
           final file = File('${dir.path}/$id.webp');
@@ -106,5 +109,68 @@ class PresetStickersService {
     } catch (_) {
       // A failed seed is a thin first impression, never a crash.
     }
+  }
+
+  /// Grants one unlock batch: five shipped cutouts, appended to the
+  /// store. Called from onboarding — each answered question unlocks a
+  /// batch, six batches cover all 30 shipped outfits. Each batch is a
+  /// one-shot (tracked in prefs), and every write is read-modify-write
+  /// against the live store so nothing clobbers a sticker saved in
+  /// between.
+  static Future<void> grantBatch(int batch) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'preset_batch_${batch.clamp(0, 5)}_granted';
+    if (prefs.getBool(key) ?? false) return;
+
+    final start = (batch.clamp(0, 5)) * 5;
+    final slice = assets.skip(start).take(5).toList();
+    final dir = await getApplicationDocumentsDirectory();
+    final metaFile = File('${dir.path}/stickers.json');
+    final list = metaFile.existsSync()
+        ? (jsonDecode(await metaFile.readAsString()) as List)
+            .cast<Map<String, dynamic>>()
+            .map(OutfitSticker.fromJson)
+            .toList()
+        : <OutfitSticker>[];
+
+    final granted = <OutfitSticker>[];
+    for (var i = 0; i < slice.length; i++) {
+      // Same id scheme as the splash seed: anything already in the store
+      // (seeded or previously unlocked) is skipped, so the six batches
+      // top the wardrobe up to exactly the shipped 30.
+      final id = 'fit_${slice[i].split('/').last.replaceAll('.webp', '')}';
+      if (list.any((s) => s.id == id)) continue;
+      try {
+        final bytes = await rootBundle.load(slice[i]);
+        final file = File('${dir.path}/$id.webp');
+        await file.writeAsBytes(
+          bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+          flush: true,
+        );
+        final style = await StickerStyleService.analyze(file.path);
+        granted.add(OutfitSticker(
+          id: id,
+          imagePath: file.path,
+          // Newest first on landing: each batch arrives on top of the
+          // stack, in its own shipped order.
+          createdAt: DateTime.now().add(Duration(seconds: i)),
+          haloStripped: false,
+          shapeIndex: style.shapeIndex,
+          dominantColor: style.dominantColor,
+        ));
+      } catch (_) {
+        // One unreadable asset never blocks the batch.
+      }
+    }
+    if (granted.isEmpty) {
+      await prefs.setBool(key, true);
+      return;
+    }
+    list.addAll(granted);
+    await metaFile.writeAsString(
+      jsonEncode(list.map((s) => s.toJson()).toList()),
+    );
+    await ProAccessService.markFreeSlotsUsed(granted.length);
+    await prefs.setBool(key, true);
   }
 }

@@ -38,8 +38,13 @@ class RoastService {
 
   /// Deterministic pick per sticker, so a sticker's roast is stable
   /// across opens. Bump [salt] (e.g. refresh button) for a new line.
-  static String roastFor(OutfitSticker sticker, {int salt = 0}) {
-    final h = sticker.id.hashCode ^ salt;
+  static String roastFor(OutfitSticker sticker, {int salt = 0}) =>
+      roastForId(sticker.id, salt: salt);
+
+  /// Same pick by raw id — for cutouts that aren't saved stickers yet
+  /// (e.g. the onboarding Aura reveal).
+  static String roastForId(String id, {int salt = 0}) {
+    final h = id.hashCode ^ salt;
     return _roasts[h.abs() % _roasts.length];
   }
 

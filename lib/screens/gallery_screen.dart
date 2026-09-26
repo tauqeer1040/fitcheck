@@ -156,6 +156,7 @@ class _GalleryScreenState extends State<GalleryScreen>
       if (_justAddedId == removed.id) _justAddedId = null;
     });
     await _saveStickers();
+    unawaited(WidgetService.updateAll(bgColor: _indicatorColor));
     // Park the file so Undo can bring it back byte-identical. The trash
     // keeps the sticker's own extension so .webp and legacy .png
     // stickers stay distinguishable through delete/undo.
@@ -256,6 +257,7 @@ class _GalleryScreenState extends State<GalleryScreen>
       final slot = _trashIndex.clamp(0, _stickers.length);
       setState(() => _stickers.insert(slot, sticker));
       await _saveStickers();
+      unawaited(WidgetService.updateAll(bgColor: _indicatorColor));
     } catch (_) {
       // Trash already gone; nothing to restore.
     }
@@ -315,26 +317,9 @@ class _GalleryScreenState extends State<GalleryScreen>
     // Widget rotation rolls forward on every boot (daily stickers,
     // 2x-daily funny line) when its day/period turned overnight.
     unawaited(WidgetService.maybeRotate());
-    // One-shot soft paywall on first gallery entry (post-onboarding).
-    // Dismissable; the hard gate fires at the 30-sticker limit.
-    var onboardingShown = false;
-    if (await ProAccessService.consumeOnboardingPaywall()) {
-      await RevenueCatService.instance.ensureInitialized();
-      if (!RevenueCatService.instance.isPro && mounted) {
-        await Future<void>.delayed(const Duration(milliseconds: 600));
-        if (!mounted) return;
-        onboardingShown = true;
-        _lastLaunchAskMs = DateTime.now().millisecondsSinceEpoch;
-        await MomentPaywallService.maybeShow(
-          context,
-          placement: 'onboarding',
-          locked: false,
-        );
-      }
-    }
-    // Existing Max users who never saw the thank-you (subscribed
-    // before it existed, or via restore): one welcome-back sheet,
-    // once ever. The sheet marks itself seen on dismiss.
+    // The one-shot post-onboarding soft paywall is gone: the splash now
+    // opens the paywall on every launch instead. Pro users still get
+    // their one-time welcome-back sheet.
     try {
       await RevenueCatService.instance.ensureInitialized();
       final prefs = await SharedPreferences.getInstance();
@@ -343,11 +328,9 @@ class _GalleryScreenState extends State<GalleryScreen>
         await MaxThankYouSheet.show(context, restored: true);
       }
     } catch (_) {}
-    // Non-subscribers get the (dismissable) paywall on every launch —
-    // skipped when the onboarding sheet just showed so they never stack.
-    if (!onboardingShown) {
-      unawaited(_launchPaywallAsk('app_launch'));
-    }
+    // The launch paywall belongs to the splash now (every launch, once
+    // onboarding is finished) — showing it here too would stack two.
+    // This screen only owns the foreground ask.
   }
 
   /// Launch/foreground ask for non-subscribers: soft paywall, forced
@@ -499,6 +482,21 @@ class _GalleryScreenState extends State<GalleryScreen>
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const OnboardingFlow(debugPreview: true),
+      ),
+    );
+  }
+
+  /// Debug card: fast-forward into onboarding on one of its own pages —
+  /// `first_wish` (the photo picker) or `aura` (the cutout reveal). The
+  /// real pages are used, so the picker → preview → reveal handoff can be
+  /// worked on without walking the six questions first.
+  Future<void> _openOnboardingAt(String page) async {
+    if (!mounted) return;
+    AppHaptics.tap();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            OnboardingFlow(debugPreview: true, debugStartAt: page),
       ),
     );
   }
@@ -836,6 +834,7 @@ class _GalleryScreenState extends State<GalleryScreen>
                 onPreviewSheets: () =>
                     MaxThankYouSheet.showPreviewPicker(context),
                 onOnboarding: _openOnboardingPreview,
+                onOnboardingAt: _openOnboardingAt,
                 onToggleNotif: _toggleNotif,
                 m3Thumbs: _m3Thumbs,
                 onToggleM3Thumbs: _toggleM3Thumbs,
