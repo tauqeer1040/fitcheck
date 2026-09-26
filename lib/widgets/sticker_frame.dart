@@ -159,6 +159,11 @@ class StickerFrameField extends StatefulWidget {
   /// still reads as the border in front of everything.
   final bool particlesOnTop;
 
+  /// Screen-space band where the grab layer must not claim pointers — the
+  /// flow's CTA row. Stickers still draw there; they just cannot eat a
+  /// tap aimed at a Back / Continue button sitting under them.
+  final Rect? grabExclusion;
+
   const StickerFrameField({
     super.key,
     required this.child,
@@ -166,6 +171,7 @@ class StickerFrameField extends StatefulWidget {
     this.onMetrics,
     this.autoBurst = false,
     this.particlesOnTop = false,
+    this.grabExclusion,
   });
 
   @override
@@ -907,6 +913,7 @@ class StickerFrameFieldState extends State<StickerFrameField>
                   particles: _particles,
                   sprites: sprites!,
                   slop: _grabSlop,
+                  exclusion: widget.grabExclusion,
                 ),
               ),
             ),
@@ -1227,18 +1234,28 @@ class _GrabPainter extends CustomPainter {
   final List<Sprite> sprites;
   final double slop;
 
+  /// Band the grab layer refuses to claim (the page's CTA row). Without
+  /// it the layer is opaque to hit testing inside a sticker, so a border
+  /// sticker sitting over Back / Continue swallowed the tap before the
+  /// button could ever be hit — the button simply did nothing.
+  final ui.Rect? exclusion;
+
   const _GrabPainter({
     required this.particles,
     required this.sprites,
     required this.slop,
+    this.exclusion,
   });
 
   @override
   void paint(ui.Canvas canvas, ui.Size size) {}
 
   @override
-  bool? hitTest(ui.Offset position) =>
-      _particleAt(particles, sprites, position, slop) != null;
+  bool? hitTest(ui.Offset position) {
+    final ex = exclusion;
+    if (ex != null && ex.contains(position)) return false;
+    return _particleAt(particles, sprites, position, slop) != null;
+  }
 
   @override
   bool shouldRepaint(_GrabPainter oldDelegate) => false;

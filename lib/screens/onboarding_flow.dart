@@ -100,6 +100,39 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   double get _effTop => _measuredTop + _copyTop;
   double get _effBottom => _measuredTop + _copyBottom;
 
+  /// The CTA row's band, in the frame's own (full-window) coordinates.
+  /// The sticker grab layer is the topmost thing on screen and stops hit
+  /// testing inside a sticker, so a border sticker sitting over Back /
+  /// Continue swallowed the tap and the button did nothing. Handing the
+  /// band to the frame lets it stand aside there.
+  Rect? get _ctaExclusion {
+    final media = MediaQuery.of(context);
+    final rowBottom = media.size.height - media.padding.bottom - _effBottom;
+    debugPrint(
+      '[nav] ctaExclusion h=${media.size.height} padB=${media.padding.bottom} '
+      'effBottom=$_effBottom row=$rowBottom',
+    );
+    return Rect.fromLTRB(
+      0,
+      rowBottom - _CtaRow.height - 8,
+      media.size.width,
+      media.size.height,
+    );
+  }
+
+  /// Set when the user backs out of the Aura reveal: the wish step should
+  /// come up with the photo picker already open, because the only reason
+  /// to go back is to choose a different photo.
+  bool _reopenPicker = false;
+
+  /// Aura → Back: the wish step, sheet up. The cutout already landed, so
+  /// "back" means "another photo" rather than "tap the button again".
+  void _backFromAura() {
+    debugPrint('[nav] _backFromAura guard=${_navGuard()}');
+    _reopenPicker = true;
+    _goTo(_firstWishIndex);
+  }
+
   void _onFrameMetrics(EdgeInsets insets) {
     if (!mounted) return;
     if ((insets.left - _measuredSide).abs() < 0.5 &&
@@ -712,6 +745,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   void _back() {
+    debugPrint('[nav] _back index=$_index');
     if (!_navGuard()) return;
     if (_index > 0) {
       _goTo(_index - 1);
@@ -809,9 +843,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 draggable: true,
                 onMetrics: _onFrameMetrics,
                 autoBurst: true,
-              // The Aura page is the sticker reveal, so the border frame
-              // has to paint in front of it there.
-              particlesOnTop: _index == _auraIndex,
+                // The CTA row keeps its taps even under a border sticker.
+                grabExclusion: _ctaExclusion,
+                // The Aura page is the sticker reveal, so the border frame
+                // has to paint in front of it there.
+                particlesOnTop: _index == _auraIndex,
                 child: Stack(
                   children: [
                     SafeArea(
@@ -872,6 +908,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                                   onPicked: _onWishPicked,
                                   onBack: _back,
                                   displayName: _displayName(),
+                                  autoOpen: _reopenPicker,
+                                  onAutoOpenHandled: () {
+                                    if (_reopenPicker) {
+                                      setState(() => _reopenPicker = false);
+                                    }
+                                  },
                                   copySide: _effSide,
                                   copyTop: _effTop,
                                   ctaBottom: _effBottom,
@@ -894,7 +936,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                                   active: _index == _auraIndex,
                                   onRevealed: _onAuraRevealed,
                                   onNext: _onAuraContinue,
-                                  onBack: _back,
+                                  onBack: _backFromAura,
                                   copySide: _effSide,
                                   copyTop: _effTop,
                                   ctaBottom: _effBottom,
@@ -1417,6 +1459,10 @@ class _CtaRow extends StatelessWidget {
   final VoidCallback? onNext;
   final VoidCallback? onBack;
   final String nextLabel;
+
+  /// Row height, shared with the flow so the grab layer knows which band
+  /// belongs to the buttons.
+  static const height = 56.0;
   const _CtaRow({this.onNext, this.onBack, this.nextLabel = 'Continue'});
 
   @override
@@ -1427,8 +1473,8 @@ class _CtaRow extends StatelessWidget {
         children: [
           if (onBack != null) ...[
             SizedBox(
-              width: 56,
-              height: 56,
+              width: height,
+              height: height,
               child: FilledButton(
                 onPressed: onBack,
                 style: FilledButton.styleFrom(
@@ -1447,7 +1493,7 @@ class _CtaRow extends StatelessWidget {
           ],
           Expanded(
             child: SizedBox(
-              height: 56,
+              height: height,
               child: FilledButton(
                 onPressed: onNext,
                 style: FilledButton.styleFrom(
@@ -2356,6 +2402,12 @@ class _FirstWishPage extends StatefulWidget {
   final double copySide;
   final double copyTop;
   final double ctaBottom;
+
+  /// Open the picker sheet as soon as this page is up — set when the user
+  /// backed out of the Aura reveal, so they land straight in the grid
+  /// instead of tapping the button again.
+  final bool autoOpen;
+  final VoidCallback? onAutoOpenHandled;
   const _FirstWishPage({
     required this.onPicked,
     required this.onBack,
@@ -2363,6 +2415,8 @@ class _FirstWishPage extends StatefulWidget {
     this.copySide = 75,
     this.copyTop = 75,
     this.ctaBottom = 75,
+    this.autoOpen = false,
+    this.onAutoOpenHandled,
   });
 
   @override
@@ -2382,6 +2436,23 @@ class _FirstWishPageState extends State<_FirstWishPage> {
   void initState() {
     super.initState();
     _checkPermission();
+    if (widget.autoOpen) _autoOpen();
+  }
+
+  @override
+  void didUpdateWidget(_FirstWishPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.autoOpen && !oldWidget.autoOpen) _autoOpen();
+  }
+
+  /// Open the sheet on the frame after the page turn lands, and tell the
+  /// flow it was served so a later rebuild does not re-open it.
+  void _autoOpen() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.autoOpen) return;
+      widget.onAutoOpenHandled?.call();
+      unawaited(_allowAccess());
+    });
   }
 
   Future<void> _checkPermission() async {
