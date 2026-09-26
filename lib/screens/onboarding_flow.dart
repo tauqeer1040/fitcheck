@@ -849,7 +849,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   @override
   Widget build(BuildContext context) {
     return _CtaOffset(
-      value: _tunerEnabled ? _tunerCta : 0,
+      value: kDebugMode && _tunerEnabled ? _tunerCta : 0,
       child: PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, _) {
