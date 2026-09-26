@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -485,10 +486,12 @@ class _StickerGridState extends State<StickerGrid>
               ),
             ),
           ),
-        // Debug card: everything that lived in the appbar (support,
-        // shape demo, pro, sheet previews) plus per-type notification
-        // toggles. Empty state only — the appbar keeps logo + wordmark.
-        Container(
+        // Debug card (debug builds only — never ships to prod):
+        // everything that lived in the appbar (support, shape demo, pro,
+        // sheet previews) plus per-type notification toggles. Empty state
+        // only — the appbar keeps logo + wordmark.
+        if (kDebugMode)
+          Container(
           margin: const EdgeInsets.only(top: 16),
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           decoration: BoxDecoration(
