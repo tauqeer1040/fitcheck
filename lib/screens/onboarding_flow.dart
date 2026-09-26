@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_confetti/flutter_confetti.dart';
 import 'package:flutter_m3shapes/flutter_m3shapes.dart';
@@ -86,18 +85,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   double _measuredSide = 75;
   double _measuredTop = 75;
 
-  /// Tuner extras stacked on top of the measured intrusion — what the
-  /// copy-box dials drag. [_ReadableAreaGuide] draws the same effective
-  /// box, so what you drag is what the text lives in.
-  static const _tunerEnabled = true;
-  double _tunerCount = 2;
-  double _tunerSize = 1.2;
-  double _tunerText = 0.65;
-  double _tunerCta = 15;
-  double _copySide = 0;
-  double _copyTop = 0;
-  double _copyBottom = 0;
-  bool _tunerOpen = false;
+  /// Extra copy-box padding stacked on top of the measured intrusion.
+  final double _copySide = 0;
+  final double _copyTop = 0;
+  final double _copyBottom = 0;
 
   double get _effSide => _measuredSide + _copySide;
   double get _effTop => _measuredTop + _copyTop;
@@ -848,9 +839,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   @override
   Widget build(BuildContext context) {
-    return _CtaOffset(
-      value: kDebugMode && _tunerEnabled ? _tunerCta : 0,
-      child: PopScope(
+    return PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;
@@ -1020,54 +1009,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                         ],
                       ),
                     ),
-                    // Design guide: debug builds only, points-nothing. Shows the
-                    // box onboarding copy has to live inside — the safe area,
-                    // inset by the page padding, and stopping above the CTA row.
-                    if (kDebugMode)
-                      _ReadableAreaGuide(
-                        side: _effSide,
-                        top: _effTop,
-                        bottomGutter: _effBottom,
-                      ),
-                    // Explosion tuner: debug builds only. Three dials — how many
-                    // copies of the set fly, how big every sticker draws, how
-                    // big the Get Started prayer reads. Count and size re-deal
-                    // the frame live; text is a plain re-render.
-                    if (kDebugMode && _tunerEnabled)
-                      _ExplosionTuner(
-                        count: _tunerCount,
-                        size: _tunerSize,
-                        text: _tunerText,
-                        cta: _tunerCta,
-                        side: _copySide,
-                        top: _copyTop,
-                        bottom: _copyBottom,
-                        open: _tunerOpen,
-                        onChanged: (count, size, text, cta, side, top, bottom) {
-                          setState(() {
-                            _tunerCount = count;
-                            _tunerSize = size;
-                            _tunerText = text;
-                            _tunerCta = cta;
-                            _copySide = side;
-                            _copyTop = top;
-                            _copyBottom = bottom;
-                          });
-                          _frameKey.currentState?.retune(
-                            count: count,
-                            size: size,
-                          );
-                        },
-                        onToggle: () =>
-                            setState(() => _tunerOpen = !_tunerOpen),
-                      ),
                   ],
                 ),
               ),
             ],
           ),
         ),
-      ),
     );
   }
 }
@@ -1551,45 +1498,6 @@ class _RatePageState extends State<_RatePage>
   }
 }
 
-/// Debug-only outline of the area onboarding copy can occupy: the safe
-/// area, inset by the live copy-box dials (side/top) and stopping above
-/// the CTA row (56pt button + the bottom gutter). Same insets the pages
-/// pad themselves with, so the border is the textbox.
-/// Debug builds only, points-nothing.
-class _ReadableAreaGuide extends StatelessWidget {
-  final double side;
-  final double top;
-  final double bottomGutter;
-  const _ReadableAreaGuide({
-    required this.side,
-    required this.top,
-    required this.bottomGutter,
-  });
-
-  static const _ctaHeight = 56.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final padding = MediaQuery.paddingOf(context);
-    return IgnorePointer(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          padding.left + side,
-          padding.top + top,
-          padding.right + side,
-          padding.bottom + _ctaHeight + bottomGutter,
-        ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0x14FFD60A),
-            border: Border.all(color: const Color(0xFFFFD60A), width: 1.5),
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// Step 1: the placeholder lockup — the pants logo over the StickerPants
 /// wordmark, then the pitch line beneath it. Flat on purpose: no glow, no
@@ -1697,17 +1605,6 @@ class _GetStartedPage extends StatelessWidget {
 /// bottom offset on every onboarding screen. A null [onBack] collapses
 /// the arrow entirely (no dead button) and lets Continue span full
 /// width — same 56pt height either way.
-class _CtaOffset extends InheritedWidget {
-  final double value;
-  const _CtaOffset({required this.value, required super.child});
-
-  static double of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<_CtaOffset>()?.value ?? 0;
-
-  @override
-  bool updateShouldNotify(_CtaOffset oldWidget) => oldWidget.value != value;
-}
-
 class _CtaRow extends StatelessWidget {
   final VoidCallback? onNext;
   final VoidCallback? onBack;
@@ -1718,9 +1615,7 @@ class _CtaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(top: _CtaOffset.of(context)),
-      child: Row(
+    return Row(
         children: [
           if (onBack != null) ...[
             SizedBox(
@@ -1777,7 +1672,6 @@ class _CtaRow extends StatelessWidget {
             ),
           ),
         ],
-      ),
     );
   }
 }
@@ -2031,7 +1925,7 @@ class _AboutYouStepPage extends StatefulWidget {
   final VoidCallback onNext;
   final VoidCallback onBack;
 
-  /// Live copy-box insets from the tuner (see [_ReadableAreaGuide]).
+  /// Live copy-box insets from the frame.
   final double copySide;
   final double copyTop;
   final double ctaBottom;
@@ -2263,7 +2157,7 @@ class _BestowPage extends StatefulWidget {
   /// never fire.
   final bool active;
 
-  /// Live copy-box insets from the tuner (see [_ReadableAreaGuide]).
+  /// Live copy-box insets from the frame.
   final double copySide;
   final double copyTop;
   final double ctaBottom;
@@ -3400,293 +3294,3 @@ class _WidgetAddButtonState extends State<_WidgetAddButton> {
 
 /// Debug-only dials for the explosion and the copy box, pinned to the
 /// top of the onboarding scaffold so they never fight the page layout.
-/// Collapsed is a chip next to the step bar; expanded is a compact panel
-/// of six sliders: copies of the set (1–6), sticker size (0.5–2.5x),
-/// prayer text (0.5–2x), and extra padding stacked on top of the measured
-/// frame intrusion (side/top/CTA) that all pages and [_ReadableAreaGuide]
-/// draw from. Count and size re-deal the frame live through
-/// [StickerFrameFieldState.retune]; the rest is a plain re-render.
-class _ExplosionTuner extends StatelessWidget {
-  final double count;
-  final double size;
-  final double text;
-  final double cta;
-  final double side;
-  final double top;
-  final double bottom;
-  final bool open;
-  final void Function(
-    double count,
-    double size,
-    double text,
-    double cta,
-    double side,
-    double top,
-    double bottom,
-  )
-  onChanged;
-  final VoidCallback onToggle;
-
-  const _ExplosionTuner({
-    required this.count,
-    required this.size,
-    required this.text,
-    required this.cta,
-    required this.side,
-    required this.top,
-    required this.bottom,
-    required this.open,
-    required this.onChanged,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final topInset = MediaQuery.paddingOf(context).top;
-    return Stack(
-      children: [
-        // The panel: under the chip, inert and invisible while collapsed.
-        Positioned(
-          top: topInset + 56,
-          right: 8,
-          left: 8,
-          child: IgnorePointer(
-            ignoring: !open,
-            child: AnimatedOpacity(
-              opacity: open ? 1 : 0,
-              duration: const Duration(milliseconds: 150),
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 150),
-                curve: Curves.easeOut,
-                alignment: Alignment.topCenter,
-                child: open
-                    ? Container(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.82),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.25),
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _TunerSlider(
-                              label: 'Count',
-                              value: count,
-                              min: 1,
-                              max: 6,
-                              format: (v) => '${v.toStringAsFixed(1)}x set',
-                              onChanged: (v) => onChanged(
-                                v,
-                                size,
-                                text,
-                                cta,
-                                side,
-                                top,
-                                bottom,
-                              ),
-                            ),
-                            _TunerSlider(
-                              label: 'Sticker size',
-                              value: size,
-                              min: 0.5,
-                              max: 2.5,
-                              format: (v) => '${v.toStringAsFixed(2)}x',
-                              onChanged: (v) => onChanged(
-                                count,
-                                v,
-                                text,
-                                cta,
-                                side,
-                                top,
-                                bottom,
-                              ),
-                            ),
-                            _TunerSlider(
-                              label: 'Text size',
-                              value: text,
-                              min: 0.5,
-                              max: 2,
-                              format: (v) => '${v.toStringAsFixed(2)}x',
-                              onChanged: (v) => onChanged(
-                                count,
-                                size,
-                                v,
-                                cta,
-                                side,
-                                top,
-                                bottom,
-                              ),
-                            ),
-                            _TunerSlider(
-                              label: 'Buttons +',
-                              value: cta,
-                              min: 0,
-                              max: 64,
-                              format: (v) => '${v.toStringAsFixed(0)}px',
-                              onChanged: (v) => onChanged(
-                                count,
-                                size,
-                                text,
-                                v,
-                                side,
-                                top,
-                                bottom,
-                              ),
-                            ),
-                            _TunerSlider(
-                              label: 'Side +',
-                              value: side,
-                              min: 0,
-                              max: 64,
-                              format: (v) => '${v.toStringAsFixed(0)}px',
-                              onChanged: (v) => onChanged(
-                                count,
-                                size,
-                                text,
-                                cta,
-                                v,
-                                top,
-                                bottom,
-                              ),
-                            ),
-                            _TunerSlider(
-                              label: 'Top +',
-                              value: top,
-                              min: 0,
-                              max: 96,
-                              format: (v) => '${v.toStringAsFixed(0)}px',
-                              onChanged: (v) => onChanged(
-                                count,
-                                size,
-                                text,
-                                cta,
-                                side,
-                                v,
-                                bottom,
-                              ),
-                            ),
-                            _TunerSlider(
-                              label: 'CTA +',
-                              value: bottom,
-                              min: 0,
-                              max: 64,
-                              format: (v) => '${v.toStringAsFixed(0)}px',
-                              onChanged: (v) => onChanged(
-                                count,
-                                size,
-                                text,
-                                cta,
-                                side,
-                                top,
-                                v,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : const SizedBox(width: double.infinity),
-              ),
-            ),
-          ),
-        ),
-        // The toggle chip: always tappable, sits over the step bar.
-        Positioned(
-          top: topInset + 12,
-          right: 8,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onToggle,
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Text(
-                  open ? 'Close tuner' : 'Explosion tuner',
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// One dial of [_ExplosionTuner]: label, live value, and a dense slider
-/// sized for sitting over a live screen.
-class _TunerSlider extends StatelessWidget {
-  final String label;
-  final double value;
-  final double min;
-  final double max;
-  final String Function(double) format;
-  final ValueChanged<double> onChanged;
-
-  const _TunerSlider({
-    required this.label,
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.format,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 86,
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-        ),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor: Colors.white,
-              inactiveTrackColor: Colors.white24,
-              thumbColor: Colors.white,
-            ),
-            child: Slider(
-              value: value.clamp(min, max),
-              min: min,
-              max: max,
-              onChanged: onChanged,
-            ),
-          ),
-        ),
-        SizedBox(
-          width: 64,
-          child: Text(
-            format(value),
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
-              fontSize: 11,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}

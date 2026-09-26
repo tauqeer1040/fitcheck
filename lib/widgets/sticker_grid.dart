@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -63,21 +62,6 @@ class StickerGrid extends StatefulWidget {
   /// Max subscribers see the Max lockup in the empty state.
   final bool isMax;
 
-  /// Debug card actions (everything that lived in the appbar).
-  final VoidCallback? onSupportSheet;
-  final VoidCallback? onShapeDemo;
-  final VoidCallback? onPro;
-  final VoidCallback? onPreviewSheets;
-  final VoidCallback? onOnboarding;
-
-  /// Debug fast-forward: opens onboarding already on one of its own
-  /// pages (the photo picker, the Aura reveal) — the flow's page name is
-  /// passed through.
-  final ValueChanged<String>? onOnboardingAt;
-
-  /// Per-type notification state + toggle (debug card).
-  final ValueChanged<String>? onToggleNotif;
-
   /// Sheet thumbnail style (debug card): M3 expressive shapes vs
   /// plain rounded squares.
   final bool m3Thumbs;
@@ -108,13 +92,6 @@ class StickerGrid extends StatefulWidget {
     this.indicatorShape = 7,
     this.onToggleShapeBg,
     this.isMax = false,
-    this.onSupportSheet,
-    this.onShapeDemo,
-    this.onPro,
-    this.onPreviewSheets,
-    this.onOnboarding,
-    this.onOnboardingAt,
-    this.onToggleNotif,
     this.m3Thumbs = false,
     this.onToggleM3Thumbs,
     this.indicatorColor = 0xFFFFD60A,
@@ -486,102 +463,6 @@ class _StickerGridState extends State<StickerGrid>
               ),
             ),
           ),
-        // Debug card (debug builds only — never ships to prod):
-        // everything that lived in the appbar (support, shape demo, pro,
-        // sheet previews) plus per-type notification toggles. Empty state
-        // only — the appbar keeps logo + wordmark.
-        if (kDebugMode)
-          Container(
-          margin: const EdgeInsets.only(top: 16),
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF2C2C2E),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.08),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'DEBUG',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 2,
-                children: [
-                  _DebugBtn(
-                    icon: Icons.favorite_border_rounded,
-                    label: 'Support',
-                    onTap: widget.onSupportSheet,
-                  ),
-                  _DebugBtn(
-                    icon: Icons.auto_awesome_outlined,
-                    label: 'Shapes',
-                    onTap: widget.onShapeDemo,
-                  ),
-                  _DebugBtn(
-                    icon: Icons.workspace_premium_outlined,
-                    label: 'Pro',
-                    onTap: widget.onPro,
-                  ),
-                  _DebugBtn(
-                    icon: Icons.card_giftcard_rounded,
-                    label: 'Thanks',
-                    onTap: widget.onPreviewSheets,
-                  ),
-                  _DebugBtn(
-                    icon: Icons.waving_hand_rounded,
-                    label: 'Onboard',
-                    onTap: widget.onOnboarding,
-                  ),
-                  // Fast-forward entries: the two pages the pick → preview
-                  // → reveal handoff lives on, reusing the flow's own
-                  // pages so there is nothing to walk to reach them.
-                  _DebugBtn(
-                    icon: Icons.add_photo_alternate_outlined,
-                    label: 'Picker',
-                    onTap: () => widget.onOnboardingAt?.call('first_wish'),
-                  ),
-                  _DebugBtn(
-                    icon: Icons.auto_awesome_outlined,
-                    label: 'Aura',
-                    onTap: () => widget.onOnboardingAt?.call('aura'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              // Fire-now: post the real notification immediately —
-              // proves display + permission + channel without waiting
-              // for a wall-clock slot.
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _DebugBtn(
-                    icon: Icons.play_arrow_rounded,
-                    label: 'Fire AM',
-                    onTap: () =>
-                        widget.onToggleNotif?.call('fire_morning'),
-                  ),
-                  _DebugBtn(
-                    icon: Icons.play_arrow_rounded,
-                    label: 'Fire PM',
-                    onTap: () =>
-                        widget.onToggleNotif?.call('fire_night'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
       ],
       ),
     );
@@ -907,29 +788,3 @@ class _LandingPopState extends State<_LandingPop> {
 }
 
 /// Compact debug-card button (empty state): yellow icon + white label.
-class _DebugBtn extends StatelessWidget {  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  const _DebugBtn({
-    required this.icon,
-    required this.label,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton.icon(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      icon: Icon(icon, size: 16, color: const Color(0xFFFFD60A)),
-      label: Text(
-        label,
-        style: const TextStyle(color: Colors.white, fontSize: 12),
-      ),
-    );
-  }
-}

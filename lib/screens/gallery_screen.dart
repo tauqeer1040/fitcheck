@@ -5,7 +5,6 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:confetti/confetti.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -19,7 +18,6 @@ import '../motion/app_motion.dart';
 import '../services/analytics_service.dart';
 import '../services/growth_service.dart';
 import '../services/moment_paywall_service.dart';
-import '../services/notification_service.dart';
 import '../services/pro_access_service.dart';
 import '../services/revenuecat_service.dart';
 import '../services/sticker_style_service.dart';
@@ -29,11 +27,8 @@ import '../widgets/gallery_bottom_sheet.dart';
 import '../widgets/genie_flight.dart';
 import '../widgets/sticker_grid.dart';
 import '../widgets/wordmark_shadow.dart';
-import 'growth_prompt_sheet.dart';
 import 'expired_upsell_sheet.dart';
 import 'max_thankyou_sheet.dart';
-import 'onboarding_flow.dart';
-import 'shape_demo_sheet.dart';
 import 'sticker_detail_screen.dart';
 
 /// Apple Notes dark-mode palette.
@@ -436,17 +431,6 @@ class _GalleryScreenState extends State<GalleryScreen>
   /// Appbar heart button: every open advances a manual rotation through
   /// review → share → widgets (+ reminders while permission is missing).
   /// No count/throttle/snooze gates — the user asked for it.
-  Future<void> _openSupportSheet() async {
-    if (!mounted) return;
-    // Same rotation cursor as the automatic triggers (no throttle
-    // here): every manual open advances to the next eligible page,
-    // so debug launches alternate too.
-    final eligible = await GrowthService.eligibleActions();
-    final action = await GrowthService.pickNext(eligible);
-    if (action == null || !mounted) return;
-    await showGrowthPromptSheet(context, action, actions: eligible);
-  }
-
   void _onCustomerInfoForWordmark(CustomerInfo _) {
     // Entitlement flips (subscribe / restore / expiry / resume) swap
     // the wordmark between Max and standard art.
@@ -494,27 +478,7 @@ class _GalleryScreenState extends State<GalleryScreen>
     unawaited(WidgetService.updateAll(bgColor: _indicatorColor));
   }
 
-  /// Fire-now (debug card): post the morning/night copy immediately —
-  /// proves display + permission + channel without waiting for a slot.
-  Future<void> _toggleNotif(String type) async {
-    AppHaptics.tap();
-    final which = type == 'fire_night' ? 'night' : 'morning';
-    final enabled = await NotificationService.areEnabled();
-    final granted =
-        enabled || await NotificationService.requestPermissions();
-    if (!granted) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enable notifications in Settings first'),
-        ),
-      );
-      return;
-    }
-    await NotificationService.fireNow(which);
-  }
-
-  /// Sheet thumbnail style (debug card toggle, persisted):
+  /// Sheet thumbnail style (persisted):
   /// M3 expressive shapes vs plain rounded squares.
   bool _m3Thumbs = false;
 
@@ -528,51 +492,8 @@ class _GalleryScreenState extends State<GalleryScreen>
     setState(() => _m3Thumbs = on);
   }
 
-  /// Debug card: relaunch onboarding on demand (preview mode — pops
-  /// back here, analytics stay quiet).
-  Future<void> _openOnboardingPreview() async {
-    if (!mounted) return;
-    AppHaptics.tap();
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const OnboardingFlow(debugPreview: true),
-      ),
-    );
-  }
 
-  /// Debug card: fast-forward into onboarding on one of its own pages —
-  /// `first_wish` (the photo picker) or `aura` (the cutout reveal). The
-  /// real pages are used, so the picker → preview → reveal handoff can be
-  /// worked on without walking the six questions first.
-  Future<void> _openOnboardingAt(String page) async {
-    if (!mounted) return;
-    AppHaptics.tap();
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            OnboardingFlow(debugPreview: true, debugStartAt: page),
-      ),
-    );
-  }
 
-  /// Appbar Pro button: launches the paywall on demand (manual
-  /// placement, dismissable). Pro users land in Customer Center
-  /// instead — manage, restore, or cancel from one place.
-  Future<void> _openPro() async {
-    AppHaptics.tap();
-    await RevenueCatService.instance.ensureInitialized();
-    if (!mounted) return;
-    if (RevenueCatService.instance.isPro) {
-      await RevenueCatService.instance.presentCustomerCenter();
-      return;
-    }
-    await MomentPaywallService.maybeShow(
-      context,
-      placement: 'manual',
-      locked: false,
-      force: true,
-    );
-  }
 
   Future<void> _persistShapeBg() async {
     try {
@@ -847,15 +768,7 @@ class _GalleryScreenState extends State<GalleryScreen>
             ),
           ],
         ),        actions: [
-          // Debug replay for the first-view long-press tip.
-          if (kDebugMode)
-            IconButton(
-              tooltip: 'Long-press tip',
-              onPressed: _showLongTapTip,
-              icon: const Icon(Icons.touch_app_rounded),
-            ),
-          // Everything else lives in the empty-state debug card
-          // (logo + wordmark stay here). Done exits delete mode.
+          // Done exits delete mode.
           if (_jiggling)
             TextButton(
               onPressed: _exitJiggle,
@@ -888,15 +801,6 @@ class _GalleryScreenState extends State<GalleryScreen>
                 indicatorShape: _indicatorShape,
                 onToggleShapeBg: _toggleShapeBg,
                 isMax: _isMax,
-                onSupportSheet: _openSupportSheet,
-                onShapeDemo: () =>
-                    showShapeDemo(context, bgColor: _indicatorColor),
-                onPro: _openPro,
-                onPreviewSheets: () =>
-                    MaxThankYouSheet.showPreviewPicker(context),
-                onOnboarding: _openOnboardingPreview,
-                onOnboardingAt: _openOnboardingAt,
-                onToggleNotif: _toggleNotif,
                 m3Thumbs: _m3Thumbs,
                 onToggleM3Thumbs: _toggleM3Thumbs,
                 indicatorColor: _indicatorColor,
