@@ -7,14 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../motion/app_haptics.dart';
 import '../services/analytics_service.dart';
 import '../services/growth_service.dart';
-import '../services/moment_paywall_service.dart';
 import '../services/pro_access_service.dart';
 import '../services/sticker_title_service.dart';
 import '../services/whatsapp_sticker_service.dart';
 import '../widgets/shape_marquee.dart';
 import '../widgets/sheet_stat_tile.dart';
 import '../widgets/sticker_loop_header.dart';
-import 'expired_upsell_sheet.dart';
 
 /// Post-subscription thank-you (ramadan pattern): a dismissable
 /// bottomsheet with the user's stats. Shown once per purchase/restore
@@ -74,125 +72,6 @@ class MaxThankYouSheet {
     }
   }
 
-  /// On-demand preview picker (works in release builds — hidden behind
-  /// the appbar sparkle long-press): view either thank-you variant
-  /// without buying anything. Previews never mark the sheet seen.
-  static Future<void> showPreviewPicker(BuildContext context) async {
-    if (!context.mounted) return;
-    AppHaptics.tap();
-    await showModalBottomSheet(
-      context: context,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-        decoration: const BoxDecoration(
-          color: Color(0xFF1C1C1E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Sheet previews',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () async {
-                  Navigator.of(ctx).pop();
-                  await MaxThankYouSheet.show(
-                    context,
-                    restored: false,
-                    markSeen: false,
-                  );
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFD60A),
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: const Text(
-                  'Thank-you (purchase)',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () async {
-                  Navigator.of(ctx).pop();
-                  await MaxThankYouSheet.show(
-                    context,
-                    restored: true,
-                    markSeen: false,
-                  );
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white.withValues(alpha: 0.1),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: const Text(
-                  'Thank-you (restore)',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () async {
-                  Navigator.of(ctx).pop();
-                  await ExpiredUpsellSheet.showPreview(
-                    context,
-                    onGetMax: () => MomentPaywallService.maybeShow(
-                      context,
-                      placement: 'expired_upsell_preview',
-                      locked: false,
-                    ),
-                  );
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white.withValues(alpha: 0.1),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: const Text(
-                  'Expired upsell',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _MaxThankYou extends StatefulWidget {

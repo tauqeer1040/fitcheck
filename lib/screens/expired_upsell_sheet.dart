@@ -37,28 +37,6 @@ class ExpiredUpsellSheet {
       return false;
     }
   }
-
-  /// On-demand preview (debug card, release-safe). Get Max runs
-  /// [onGetMax] when provided (the picker passes the paywall), else it
-  /// just closes.
-  static Future<void> showPreview(
-    BuildContext context, {
-    Future<bool> Function()? onGetMax,
-  }) async {
-    if (!context.mounted) return;
-    AppHaptics.tap();
-    final wantMax = await showModalBottomSheet<bool>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _ExpiredUpsell(),
-    );
-    if (wantMax != true || onGetMax == null || !context.mounted) return;
-    try {
-      await onGetMax();
-    } catch (_) {}
-  }
 }
 
 class _ExpiredUpsell extends StatefulWidget {

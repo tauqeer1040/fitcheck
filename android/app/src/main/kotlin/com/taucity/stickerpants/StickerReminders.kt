@@ -77,8 +77,9 @@ object StickerReminders {
     /// "Tauqeer, add your outfit today." Falls back to the plain line
     /// when no name was ever pushed (or it was blank).
     fun reminderBody(context: Context): String {
-        val name = prefs(context).getString(KEY_USER_NAME, "").orEmpty().trim()
-        return if (name.isEmpty) FALLBACK_BODY else "$name, add your outfit today"
+        val raw: String? = prefs(context).getString(KEY_USER_NAME, null)
+        val name = (raw ?: "").trim()
+        return if (name.isEmpty()) FALLBACK_BODY else "$name, add your outfit today"
     }
 
     fun schedule(context: Context) {
