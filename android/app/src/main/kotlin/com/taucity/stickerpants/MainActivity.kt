@@ -84,10 +84,15 @@ class MainActivity : FlutterFragmentActivity() {
                                     if (isMorning) StickerReminders.MORNING_ID
                                     else StickerReminders.NIGHT_ID,
                                     StickerReminders.FALLBACK_TITLE,
-                                    StickerReminders.FALLBACK_BODY,
+                                    StickerReminders.reminderBody(this),
                                     dedupe,
                                 ),
                             )
+                        }
+                        "setUserName" -> {
+                            val name = call.argument<String>("name").orEmpty()
+                            StickerReminders.setUserName(this, name)
+                            result.success(true)
                         }
                         else -> result.notImplemented()
                     }

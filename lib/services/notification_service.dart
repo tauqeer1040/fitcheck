@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 
+import 'sticker_title_service.dart';
+
 /// Daily outfit reminders: 8:00 AM and 10:30 PM, every day. Heading is
 /// the app name, subtext the simple ask. Tapping opens the app (default
 /// launch behavior for a scheduled notification on the launcher icon).
@@ -116,10 +118,25 @@ class NotificationService {
   /// pending chain per reminder.
   static Future<void> scheduleDaily() async {
     try {
+      // Greet by name: the native alarm receiver has no Flutter engine,
+      // so the onboarding name is pushed into the native reminder store
+      // and composed into the ping at fire time.
+      await pushUserName();
       await _channel.invokeMethod<bool>('schedule');
     } on MissingPluginException {
     } on PlatformException {
     } catch (_) {}
+  }
+
+  /// Pushes the stored onboarding display name to the native reminder
+  /// store. Idempotent; safe to call on every schedule.
+  static Future<void> pushUserName() async {
+    try {
+      final name = await StickerTitleService.storedDisplayName();
+      await _channel.invokeMethod('setUserName', {'name': name});
+    } catch (_) {
+      // Best-effort only: an unpushed name just means plain copy.
+    }
   }
 
   /// Morning ping alone (8:00 daily). Safe to call repeatedly.

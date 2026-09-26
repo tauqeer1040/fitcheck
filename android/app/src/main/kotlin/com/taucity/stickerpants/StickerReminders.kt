@@ -51,6 +51,8 @@ object StickerReminders {
     const val FALLBACK_TITLE = "StickerPants"
     const val FALLBACK_BODY = "Add your outfit today"
 
+    private const val KEY_USER_NAME = "user_name"
+
     private const val MORNING_HOUR = 8
     private const val MORNING_MINUTE = 0
     private const val NIGHT_HOUR = 22
@@ -63,6 +65,21 @@ object StickerReminders {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     // ── API (called from the MainActivity method channel) ──
+
+    /// Stores the onboarding display name for greeting composition.
+    /// Pushed from Dart whenever answers save; read back at fire time
+    /// (the alarm receiver has no Flutter engine, so the name must live
+    /// natively).
+    fun setUserName(context: Context, name: String) {
+        prefs(context).edit().putString(KEY_USER_NAME, name).apply()
+    }
+
+    /// "Tauqeer, add your outfit today." Falls back to the plain line
+    /// when no name was ever pushed (or it was blank).
+    fun reminderBody(context: Context): String {
+        val name = prefs(context).getString(KEY_USER_NAME, "").orEmpty().trim()
+        return if (name.isEmpty) FALLBACK_BODY else "$name, add your outfit today"
+    }
 
     fun schedule(context: Context) {
         prefs(context).edit()
@@ -281,7 +298,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 StickerReminders.show(
                     context, id,
                     StickerReminders.FALLBACK_TITLE,
-                    StickerReminders.FALLBACK_BODY,
+                    StickerReminders.reminderBody(context),
                     dedupe = true,
                 )
                 StickerReminders.rearmNext(context, id, 8, 0)
@@ -289,7 +306,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 StickerReminders.show(
                     context, id,
                     StickerReminders.FALLBACK_TITLE,
-                    StickerReminders.FALLBACK_BODY,
+                    StickerReminders.reminderBody(context),
                     dedupe = true,
                 )
                 StickerReminders.rearmNext(context, id, 22, 30)

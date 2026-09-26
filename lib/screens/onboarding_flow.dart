@@ -1876,7 +1876,7 @@ class _NotificationsPageState extends State<_NotificationsPage> {
           const SizedBox(height: 14),
           Text(
             widget.displayName.isNotEmpty
-                ? '${widget.displayName}, one ping at 8am, one at 10:30pm —\n\u201CAdd your outfit today.\u201D\nThat\u2019s it. No marketing. Ever.'
+                ? '${widget.displayName}, one ping at 8am, one at 10:30pm —\n\u201C${widget.displayName}, add your outfit today.\u201D\nThat\u2019s it. No marketing. Ever.'
                 : 'One ping at 8am, one at 10:30pm —\n\u201CAdd your outfit today.\u201D\nThat\u2019s it. No marketing. Ever.',
             textAlign: TextAlign.center,
             style: TextStyle(
