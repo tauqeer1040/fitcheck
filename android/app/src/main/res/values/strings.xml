@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown under the widget name in the picker (API 31+). -->
+    <string name="widget_recent_label">Sticker trio</string>
+    <string name="widget_recent_description">Your last three fits, turning over every few hours.</string>
+    <string name="widget_latest_label">Latest fit</string>
+    <string name="widget_latest_description">One fit at a time, with the roast to match.</string>
+    <!-- Baked into the picker previews: the widget's caption styling,
+         frozen for artwork that has no access to the user's stickers. -->
+    <string name="widget_preview_caption">Dress code: unbothered.</string>
+</resources>

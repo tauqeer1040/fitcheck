@@ -432,7 +432,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           jsonEncode(list.map((s) => s.toJson()).toList()),
         );
       }
-      unawaited(WidgetService.updateAll(resetRotation: true));
+      unawaited(WidgetService.updateAll());
     } catch (_) {
       // The sticker file exists regardless; the gallery will show it on
       // a later save even if this write lost the race.

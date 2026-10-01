@@ -363,9 +363,10 @@ class _GalleryScreenState extends State<GalleryScreen>
     } catch (_) {}
     if (mounted) setState(() {});
     await _migrateLegacy();
-    // Widget rotation rolls forward on every boot (daily stickers,
-    // 2x-daily funny line) when its day/period turned overnight.
-    unawaited(WidgetService.maybeRotate());
+    // Publishes the widget pool the first time it runs after an upgrade
+    // (or if stickers changed outside a save). The 4h/2h rotation itself
+    // is native — nothing to roll forward here.
+    unawaited(WidgetService.updateAll());
     // The one-shot post-onboarding soft paywall is gone: the splash now
     // opens the paywall on every launch instead. Pro users still get
     // their one-time welcome-back sheet.
@@ -452,12 +453,12 @@ class _GalleryScreenState extends State<GalleryScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Resume refresh: a purchase, restore, expiry or cancellation that
     // happened elsewhere reconciles the moment we're foregrounded.
-    // Widget rotation also rolls forward here (daily stickers, 2x-daily
-    // funny line) when its day/period turned while we were away.
+    // Widget upkeep runs too, but it is a no-op signature check — the
+    // rotation clock is native.
     if (state == AppLifecycleState.resumed) {
       unawaited(() async {
         await RevenueCatService.instance.refreshCustomerInfo();
-        await WidgetService.maybeRotate();
+        await WidgetService.updateAll();
         if (mounted) setState(() {});
         // Foreground ask for non-subscribers (guarded inside).
         if (mounted) await _launchPaywallAsk('app_foreground');
@@ -654,13 +655,12 @@ class _GalleryScreenState extends State<GalleryScreen>
         curve: AppMotion.appleEase,
       );
     }
-    // Growth loop: widgets refresh every save (newest-first window);
-    // the suggestion sheet
+    // Growth loop: the widget pool is republished on every save, so the
+    // new sticker takes the 4h slot immediately and becomes the caption's
+    // subject; the suggestion sheet
     // (review/share/widget prompt) fires on the 1st + every 5th save,
     // 5s after touchdown.
-    unawaited(
-      WidgetService.updateAll(bgColor: _indicatorColor, resetRotation: true),
-    );
+    unawaited(WidgetService.updateAll(bgColor: _indicatorColor));
     if (mounted) {
       unawaited(GrowthService.onStickerAdded(context));
     }

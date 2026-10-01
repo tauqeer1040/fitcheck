@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget-picker preview for the 2x3 (API 31+). Mirrors
+     widget_latest_sticker_layout: full-bleed frame, square cutout
+     centered, caption overlaid at the bottom inside 10dp margins. The
+     cutout comes from its own drawable because this provider draws no
+     glow — only the 2x5 silhouette is bloomed. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent">
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/widget_preview_latest_cell" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|left"
+        android:layout_marginLeft="10dp"
+        android:layout_marginRight="10dp"
+        android:layout_marginBottom="10dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:maxLines="2"
+        android:shadowColor="#FF000000"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="6"
+        android:text="@string/widget_preview_caption"
+        android:textColor="#CCFFFFFF"
+        android:textSize="17sp"
+        android:textStyle="italic" />
+
+</FrameLayout>

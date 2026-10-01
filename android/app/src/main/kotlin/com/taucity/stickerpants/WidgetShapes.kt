@@ -32,6 +32,15 @@ object WidgetShapes {
     private const val CAPTION_SIDE_MARGIN_DP = 10f
 
     /**
+     * Blur room, as a multiple of the blur radius: a NORMAL
+     * BlurMaskFilter of radius r has sigma ≈ 0.577r + 0.5 and a kernel
+     * spanning ~3 sigma on each side, so the glow reaches ~1.75r past the
+     * shape. Scaled by 2 (both sides) that is 3.5; 3.6 leaves a little
+     * slack so no faint edge survives the bitmap.
+     */
+    private const val BLUR_FIT_ROOM = 3.6f
+
+    /**
      * Color round-trip from Dart: ints cross the method channel as Long
      * whenever they exceed Int range (every 0xFF alpha color does), so
      * a plain getInt() throws ClassCastException and kills the host
@@ -217,10 +226,21 @@ object WidgetShapes {
         idxKey: String,
         legacyKey: String,
         legacyDefault: String,
-    ): String {
-        val idx = (data.all[idxKey] as? Number)?.toInt() ?: -1
-        if (idx in 0..33) return shapeNameForIndex(idx)
-        return data.getString(legacyKey, legacyDefault) ?: legacyDefault
+    ): String = shapeName(
+        (data.all[idxKey] as? Number)?.toInt() ?: -1,
+        data.getString(legacyKey, null),
+        legacyDefault,
+    )
+
+    /**
+     * Shape name from either representation: a kStyleShapes index wins
+     * (0..33, the current contract), otherwise the legacy cycling
+     * string, otherwise [default].
+     */
+    fun shapeName(idx: Int, legacy: String?, default: String): String = when {
+        idx in 0..33 -> shapeNameForIndex(idx)
+        !legacy.isNullOrEmpty() -> legacy
+        else -> default
     }
     fun containerPath(shape: String, w: Float, h: Float): Path {
         return Path().apply {
@@ -483,11 +503,17 @@ object WidgetShapes {
      * Sticker silhouette: [shape] filled with [color], drawn at
      * [contentScale] and centered so the cutout art (drawn full-bleed
      * on top) leaks past its edges. Optional fully-blurred halo
-     * ([blurFraction] of size, NORMAL) for a soft overlay glow — the
-     * content scale must leave room: extremes (1-scale)/2..(1+scale)/2
-     * plus blur must stay inside [0,1] (2x5: 0.78 + 0.10 fits).
-     * [angleDeg] rotates the shape around its center — the frames of
+     * ([blurFraction] of size, NORMAL) for a soft overlay glow —
+     * [angleDeg] rotates the shape around its center for the frames of
      * the launcher-driven flip rotation.
+     *
+     * A blurred shape is scaled down further by [blurFitRoom]: the blur
+     * kernel reaches ~3 sigma past the edge (sigma ≈ 0.577 × radius), so
+     * a shape drawn edge-to-edge has its glow sliced off by the bitmap
+     * edge — which is what made the 2x5 cells look like they sat inside
+     * a flat rectangle. Shrinking the shape to leave room for the whole
+     * kernel keeps the glow round and soft; the art above it is
+     * unaffected (separate view, full bleed).
      */
     fun renderSilhouette(
         shape: String,
@@ -498,6 +524,7 @@ object WidgetShapes {
         contentScale: Float = 0.7f,
     ): Bitmap? {
         if (sizePx <= 0) return null
+        val blur = blurFraction.coerceIn(0f, 0.25f)
         return runCatching {
             val bmp = Bitmap.createBitmap(
                 sizePx, sizePx, Bitmap.Config.ARGB_8888,
@@ -506,17 +533,25 @@ object WidgetShapes {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 this.color = color
                 style = Paint.Style.FILL
-                if (blurFraction > 0f) {
+                if (blur > 0f) {
                     maskFilter = android.graphics.BlurMaskFilter(
-                        sizePx * blurFraction,
+                        sizePx * blur,
                         android.graphics.BlurMaskFilter.Blur.NORMAL,
                     )
                 }
             }
             val path = containerPath(shape, sizePx.toFloat(), sizePx.toFloat())
             val c = sizePx / 2f
+            // Room for the glow: shape half-width + kernel reach must
+            // stay inside the bitmap. No blur means no room needed, so
+            // the gallery-filling contentScale survives untouched.
+            val fit = if (blur > 0f) {
+                (1f - BLUR_FIT_ROOM * blur).coerceAtLeast(0.3f)
+            } else {
+                1f
+            }
             val m = Matrix().apply {
-                setScale(contentScale, contentScale, c, c)
+                setScale(contentScale * fit, contentScale * fit, c, c)
                 postRotate(angleDeg, c, c)
             }
             path.transform(m)

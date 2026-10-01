@@ -1,11 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 2x3 "Latest fit".
+
+     updatePeriodMillis is the rotation tick: Android's floor is 30
+     minutes, so the provider wakes twice an hour and WidgetRotation
+     draws whatever 4h slot is due. The provider skips the re-render
+     when that slot is already on screen, so this costs six real
+     updates a day, not 48.
+
+     previewImage (all versions) + previewLayout (API 31+): without one
+     of these the picker shows a bare rounded box labelled "2 x 3"
+     instead of the widget. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp"
     android:minHeight="110dp"
     android:targetCellWidth="3"
     android:targetCellHeight="2"
-    android:updatePeriodMillis="86400000"
+    android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/widget_latest_sticker_layout"
+    android:previewImage="@drawable/widget_preview_latest"
+    android:previewLayout="@layout/widget_latest_sticker_preview"
+    android:label="@string/widget_latest_label"
+    android:description="@string/widget_latest_description"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen|keyguard">
 </appwidget-provider>

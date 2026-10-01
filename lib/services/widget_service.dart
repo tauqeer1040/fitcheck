@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:convert';
 
 import 'package:home_widget/home_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,181 +12,146 @@ import 'whatsapp_sticker_service.dart';
 /// Keeps the homescreen widgets fed. Kotlin providers read saved paths,
 /// shapes, and colors from HomeWidget's SharedPreferences and render:
 /// cutout art over a tinted silhouette on transparency — no container.
-/// 2x5 = three recent side by side (static silhouettes); 2x3 = single
-/// latest sticker over a flip-book silhouette rotating one frame/sec.
+/// 2x5 = three recent side by side; 2x3 = single sticker, both floating
+/// over a silhouette that spins on a flip-book.
 ///
-/// Rotation (no new sticker needed):
-/// - stickers rotate once per calendar day: the shown window advances by
-///   one slot each day, wrapping around. A fresh save resets to
-///   newest-first.
-/// - the funny line rotates twice a day on 02:00/14:00 boundaries
-///   (02:00–14:00, then 14:00–02:00) via the roast salt.
+/// **The clock is native, not Dart.** Dart publishes a *pool* — every
+/// sticker, newest first, with two caption variants each — plus an
+/// epoch; `WidgetRotation.kt` picks the slot from the wall clock on
+/// every tick, so the widgets turn over with or without the app
+/// running:
 ///
-/// Rotation applies whenever Dart runs (boot, resume, save) — see
-/// [maybeRotate]. There is no background worker, so a day the app is
-/// never opened keeps yesterday's widgets.
+/// - image advances every 4h, so a fresh save lands the new sticker
+///   immediately and holds it for four hours,
+/// - caption advances every 2h (two variants per sticker), always the
+///   roast of the sticker currently on screen,
+/// - the epoch is re-stamped only when the pool itself changes, so a
+///   wordmark colour toggle never reshuffles the rotation.
+///
+/// The pool is one JSON blob rather than five keys per sticker: Pro
+/// accounts are uncapped, and 300 round trips per publish would show up
+/// as a stall after every save. Ticks come from `updatePeriodMillis`
+/// (30 min, Android's floor); the providers skip the re-render when the
+/// slot they would draw is already on screen, so a day costs six real
+/// updates.
 class WidgetService {
   static const appGroup = 'stickerpants_widgets';
 
-  static const _rotDayKey = 'widget_rotation_day';
-  static const _rotOffsetKey = 'widget_rotation_offset';
-  static const _saveDayKey = 'widget_last_save_day';
-  static const _funnyHalfKey = 'widget_funny_half_index';
+  /// Key of the pool blob. Native reads the same key.
+  static const poolKey = 'widget_pool';
 
-  /// Local calendar day as yyyyMMdd (monotonic, for rotation math).
-  static int dayIndexOf(DateTime t) => t.year * 10000 + t.month * 100 + t.day;
+  /// Caption variants per pool entry: two, so the line turns over
+  /// twice per 4h image slot. Text is composed here, never in Kotlin.
+  static const int captionVariants = 2;
 
-  /// Twice-daily periods anchored at 02:00 local: 02:00–14:00 is the
-  /// even period, 14:00–02:00 the odd one. Monotonic
-  /// (dayIndex * 2 + period), so it doubles as the roast salt.
-  static int halfPeriodIndexOf(DateTime now) {
-    final twoAm = DateTime(now.year, now.month, now.day, 2);
-    final ref = now.isBefore(twoAm)
-        ? twoAm.subtract(const Duration(days: 1))
-        : twoAm;
-    final period = (now.difference(ref).inHours ~/ 12).clamp(0, 1);
-    return dayIndexOf(ref) * 2 + period;
-  }
-
-  /// Writes the latest sticker paths and refreshes both providers.
-  /// loadStickers() returns newest-first (gallery inserts at 0), so a
-  /// plain take(3) is the three most recent — no reversing.
+  /// Publishes the rotation pool for every sticker and refreshes both
+  /// providers.
+  ///
+  /// The blob is rewritten only when its *signature* changes (sticker
+  /// ids + Max membership), which is also what re-stamps the epoch —
+  /// that is how a fresh save shows up instantly. A no-op pool
+  /// (wordmark colour toggles, app resume) leaves the rotation exactly
+  /// where it is; the 4h clock is native's job.
   ///
   /// [bgColor] is the live wordmark shadow color (0xAARRGGBB, same int
-  /// layout Android uses): the cookie backdrop tints to match. Null
-  /// leaves the last pushed color alone.
-  ///
-  /// [resetRotation] re-anchors the daily window on the newest stickers
-  /// (pass true on every save). Otherwise the stored rotation offset is
-  /// kept — a wordmark toggle must not reshuffle the widgets.
-  ///
-  /// Shapes (native clips in WidgetBitmaps): 2x5 cells cycle
-  /// clamshell/semicircle, offset by save count so the widget visibly
-  /// changes; the 2x3 latest sticker alternates arch/gem per save.
-  static Future<void> updateAll({int? bgColor, bool resetRotation = false}) async {
+  /// layout Android uses). Null leaves the last pushed color alone.
+  static Future<void> updateAll({int? bgColor}) async {
     try {
-      final List<OutfitSticker> stickers = await WhatsAppStickerService
-          .loadStickers();
-      final prefs = await SharedPreferences.getInstance();
-      final now = DateTime.now();
-      final today = dayIndexOf(now);
-      final half = halfPeriodIndexOf(now);
-      int offset = 0;
-      if (!resetRotation && stickers.isNotEmpty) {
-        offset = (prefs.getInt(_rotOffsetKey) ?? 0) % stickers.length;
+      final List<OutfitSticker> stickers =
+          await WhatsAppStickerService.loadStickers();
+      await _pushPool(stickers);
+      await _pushTextPrefs();
+      if (bgColor != null) {
+        await HomeWidget.saveWidgetData('bg_color', bgColor);
       }
-      if (resetRotation) {
-        await prefs.setInt(_rotOffsetKey, 0);
-        await prefs.setInt(_rotDayKey, today);
-        await prefs.setInt(_saveDayKey, today);
-      } else if (!prefs.containsKey(_rotDayKey)) {
-        await prefs.setInt(_rotDayKey, today);
-      }
-      await prefs.setInt(_funnyHalfKey, half);
-      await _push(stickers, offset: offset, funnySalt: half, bgColor: bgColor);
+      await _pokeProviders();
     } catch (_) {
       // Never let widget upkeep break the main flow.
     }
   }
 
-  /// Daily/12-hour rotation pass. Call on boot and on resume: advances
-  /// the sticker window by one slot when a new calendar day started
-  /// without a fresh save, and refreshes the funny line whenever the
-  /// 02:00/14:00 period flipped. No-ops when everything is current.
-  static Future<void> maybeRotate() async {
+  /// Writes the whole pool as one blob, newest sticker first (the order
+  /// [WhatsAppStickerService.loadStickers] returns, so slot 0 is the
+  /// newest). Skipped when the published signature already matches —
+  /// one read instead of a rewrite on every app resume.
+  static Future<void> _pushPool(List<OutfitSticker> stickers) async {
     try {
-      final List<OutfitSticker> stickers = await WhatsAppStickerService
-          .loadStickers();
-      if (stickers.isEmpty) return;
-      final prefs = await SharedPreferences.getInstance();
-      final now = DateTime.now();
-      final today = dayIndexOf(now);
-      final half = halfPeriodIndexOf(now);
-      var offset = (prefs.getInt(_rotOffsetKey) ?? 0) % stickers.length;
-      var dirty = false;
-      final lastDay = prefs.getInt(_rotDayKey);
-      if (lastDay == null) {
-        // First run since this shipped: anchor without advancing, so
-        // boot never reshuffles what the last save put up.
-        await prefs.setInt(_rotDayKey, today);
-        await prefs.setInt(_rotOffsetKey, offset);
-      } else if (today != lastDay &&
-          (prefs.getInt(_saveDayKey) ?? -1) != today) {
-        // New day and no fresh save today: rotate the window.
-        offset = (offset + 1) % stickers.length;
-        await prefs.setInt(_rotOffsetKey, offset);
-        await prefs.setInt(_rotDayKey, today);
-        dirty = true;
-      }
-      if (half != (prefs.getInt(_funnyHalfKey) ?? -1)) {
-        await prefs.setInt(_funnyHalfKey, half);
-        dirty = true;
-      }
-      if (dirty) {
-        await _push(stickers, offset: offset, funnySalt: half);
-      }
+      final isMax = RevenueCatService.instance.isPro;
+      final signature = '$isMax:${stickers.map((s) => s.id).join('|')}';
+      final published = await publishedSignature();
+      if (published == signature) return;
+      await HomeWidget.saveWidgetData(
+        poolKey,
+        jsonEncode({
+          'v': 1,
+          'sig': signature,
+          'epochMs': DateTime.now().millisecondsSinceEpoch,
+          'variants': captionVariants,
+          'cells': [
+            for (final OutfitSticker s in stickers)
+              {
+                'p': s.imagePath,
+                'c': s.dominantColor ?? kFallbackStickerColor,
+                // The sticker's OWN homescreen shape index
+                // (kStyleShapes): native resolves it to the matching
+                // silhouette so the widget mirrors the grid cell.
+                // -1 = legacy hash fallback.
+                's': s.shapeIndex ?? fallbackShapeIndex(s.id),
+                't': [
+                  for (int v = 0; v < captionVariants; v++)
+                    captionForId(s.id, variant: v, isMax: isMax),
+                ],
+              },
+          ],
+        }),
+      );
+    } catch (_) {}
+  }
+
+  /// The signature of the pool currently on the homescreen, or null
+  /// when none has been published. Read back from the blob itself so
+  /// the two can't drift: home_widget's prefs are the only state the
+  /// widgets actually see.
+  static Future<String?> publishedSignature() async {
+    try {
+      final raw = await HomeWidget.getWidgetData<String>(poolKey);
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final sig = decoded['sig'];
+      return sig is String ? sig : null;
     } catch (_) {
-      // Never let widget upkeep break the main flow.
+      return null;
     }
   }
 
-  /// Writes one rotated window ([offset] into newest-first [stickers],
-  /// wrapping) plus the period-salted funny line, then pokes both
-  /// providers. sticker_0 is the window head, so the 2x3 latest widget
-  /// rotates together with the 2x5 recents.
-  static Future<void> _push(
-    List<OutfitSticker> stickers, {
-    required int offset,
-    required int funnySalt,
-    int? bgColor,
-  }) async {
-    final n = stickers.length;
-    final recent = <OutfitSticker>[
-      for (int i = 0; i < 3 && n > 0; i++) stickers[(offset + i) % n],
-    ];
-    const quad = ['clamshell', 'semicircle'];
-    for (int i = 0; i < 3; i++) {
-      final path = i < recent.length ? recent[i].imagePath : '';
-      await HomeWidget.saveWidgetData('sticker_$i', path);
-      await HomeWidget.saveWidgetData(
-        'sticker_${i}_shape',
-        quad[(n + i) % quad.length],
-      );
-      await HomeWidget.saveWidgetData(
-        'sticker_${i}_color',
-        i < recent.length
-            ? (recent[i].dominantColor ?? kFallbackStickerColor)
-            : kFallbackStickerColor,
-      );
-      // The sticker's OWN homescreen shape index (kStyleShapes):
-      // native resolves it to the matching silhouette so the widget
-      // mirrors the grid cell. Null = legacy hash fallback, same as
-      // the grid.
-      final shapeIdx = i < recent.length
-          ? (recent[i].shapeIndex ?? fallbackShapeIndex(recent[i].id))
-          : -1;
-      await HomeWidget.saveWidgetData('sticker_${i}_shapeIdx', shapeIdx);
-    }
-    await HomeWidget.saveWidgetData(
-      'latest_shape',
-      n.isEven ? 'arch' : 'gem',
-    );
-    // Funny line: the window head's roast, salted by the 02:00/14:00
-    // period so it turns over twice a day. Empty = hidden.
-    await HomeWidget.saveWidgetData(
-      'funny_line',
-      recent.isNotEmpty
-          ? RoastService.roastFor(
-              recent.first,
-              salt: funnySalt,
-              isMax: RevenueCatService.instance.isPro,
-            )
-          : '',
-    );
-    // Caption size both widgets honor. Saved as a string: doubles
-    // cross the method channel as raw Long bits, which native
-    // toFloat() turns into garbage magnitudes (crashed widget
-    // inflation) — the native side parses strings safely.
+  /// The [variant]th caption (0 or 1) for the sticker with [id] —
+  /// variant 0 holds the 4h slot's first 2h, variant 1 its second.
+  ///
+  /// Both lines are fixed at push time (that is the whole point: the
+  /// caption turns over with the app closed), so variant 1 is nudged
+  /// past variant 0 — the roast pick is a hash, and a collision would
+  /// otherwise put the same line on screen twice in a row.
+  static String captionForId(
+    String id, {
+    required int variant,
+    required bool isMax,
+  }) {
+    final first = RoastService.roastForId(id, salt: 0, isMax: isMax);
+    if (variant <= 0) return first;
+    final second = RoastService.roastForId(id, salt: 7, isMax: isMax);
+    if (second != first) return second;
+    return RoastService.roastForId(id, salt: 13, isMax: isMax);
+  }
+
+  /// Caption text size, which both widgets honor. Saved as a string:
+  /// doubles cross the method channel as raw Long bits, which native
+  /// toFloat() turns into garbage magnitudes (crashed widget inflation)
+  /// — the native side parses strings safely.
+  ///
+  /// The variant *count* does not live here: it ships inside the pool
+  /// blob, so there is one source of truth for it.
+  static Future<void> _pushTextPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       // Key bumped to _v2. The old key holds whatever the (now removed)
@@ -200,9 +165,9 @@ class WidgetService {
         sp.toStringAsFixed(1),
       );
     } catch (_) {}
-    if (bgColor != null) {
-      await HomeWidget.saveWidgetData('bg_color', bgColor);
-    }
+  }
+
+  static Future<void> _pokeProviders() async {
     await HomeWidget.updateWidget(
       androidName: 'RecentStickersWidgetProvider',
       name: 'RecentStickersWidgetProvider',
@@ -212,8 +177,4 @@ class WidgetService {
       name: 'LatestStickerWidgetProvider',
     );
   }
-
-  /// Bitmap decode happens natively; this exists for future Dart-side
-  /// scaling if providers need pre-rendered tiles.
-  static bool fileExists(String path) => File(path).existsSync();
 }
