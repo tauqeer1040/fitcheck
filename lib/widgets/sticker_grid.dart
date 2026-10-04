@@ -5,7 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import './wordmark_shadow.dart';
+import 'sticker_placeholder.dart';
 import '../models/outfit_sticker.dart';
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
@@ -70,6 +70,17 @@ class StickerGrid extends StatefulWidget {
   /// Index into kStyleShapes for the wordmark shadow indicator.
   final int indicatorShape;
 
+  /// Fired when the Get Max pill is tapped (empty state / footer).
+  final VoidCallback? onGetMax;
+
+  /// Fired when footer chrome (outside the pill/wordmark) is tapped:
+  /// the whole bottom area is a picker trigger.
+  final VoidCallback? onFooterTap;
+
+  /// Debug: fill the footer chrome bright yellow so the trigger zone's
+  /// exact bounds are visible on device. Off by default.
+  final bool debugFooterFill;
+
   /// ARGB color for the wordmark shadow (user's sticker palette).
   final int indicatorColor;
 
@@ -94,6 +105,9 @@ class StickerGrid extends StatefulWidget {
     this.isMax = false,
     this.m3Thumbs = false,
     this.onToggleM3Thumbs,
+    this.onGetMax,
+    this.onFooterTap,
+    this.debugFooterFill = false,
     this.indicatorColor = 0xFFFFD60A,
     this.markScale = 1.0,
     this.shapeScale = 0.7,
@@ -116,64 +130,7 @@ class _StickerGridState extends State<StickerGrid>
   int _columns = StickerGrid.defaultColumns;
   double _startSpan = StickerGrid.defaultColumns.toDouble();
 
-  /// CTA fun lines: a fresh one every app load, rotating on each tap of
-  /// the empty state.
-  static const List<String> _pickLines = [
-    'Pick your photo to add',
-    "Oh, we're doing this again? Fine. Pick a photo.",
-    'That fit is a crime. Document the evidence.',
-    'Congrats on the outfit. Nobody asked, but congrats.',
-    "I've seen better fits. Yours is... acceptable.",
-    "A photo won't fix that wardrobe. Try anyway.",
-    'Your outfit called. It wants to be a sticker. Desperate.',
-    "Pick one. I'm not begging. Again.",
-    'Absolutely devastating drip. Allegedly.',
-    'That shirt is carrying your entire personality. Frame it.',
-    'Another selfie? Bold. Wrong, but bold.',
-    'The stickerboard will expose your laundry cycle. Proceed.',
-    "Dress like that again and I'm calling someone.",
-    'Certified fashion moment. I guess.',
-    'The fit is mid. The sticker will be glorious.',
-    "Stickers can't fix your outfit. They can immortalize it.",
-    'The pants are watching. Choose wisely.',
-    "This app has seen your outfits. It's not judging. It is.",
-    'Warning: drip levels barely above acceptable.',
-    'You survived the day in that. Reward yourself.',
-    'Psst — long-press a sticker to delete it. Very therapeutic.',
-  ];
-
-  /// Randomized per app launch so every load feels fresh.
-  late int _lineIndex =
-      DateTime.now().millisecondsSinceEpoch % _pickLines.length;
-
-  void _rotatePickLine() {
-    AppHaptics.tap();
-    setState(() => _lineIndex = (_lineIndex + 1) % _pickLines.length);
-  }
-
-  /// Arrow: single art (arrow2) at a fixed 130deg. Tap plays the
-  /// jelly wobble + haptic. No swapping, no slider.
-  static const double _arrowDeg = 130;
-  static const double _arrowHeight = 240;
-
-  /// The arrow burns down as the board fills: every saved sticker takes
-  /// one step off its height, gone at 31 (the 30-sticker free quota
-  /// plus the 31st save). Urgency you can feel — never a banner.
-  static const int _arrowGoneAt = 31;
-
-  double get _arrowScale =>
-      ((_arrowGoneAt - widget.stickers.length) / _arrowGoneAt)
-          .clamp(0.0, 1.0);
-
-  late final AnimationController _arrowWobble = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 600),
-  );
-
-  void _bounceArrow() {
-    AppHaptics.tap();
-    _arrowWobble.forward(from: 0);
-  }
+  
 
   /// Live pinch preview: rubber-banded scale + focal anchor. Springs back
   /// to 1.0 on release while the snapped column count stays.
@@ -237,7 +194,6 @@ class _StickerGridState extends State<StickerGrid>
 
   @override
   void dispose() {
-    _arrowWobble.dispose();
     _jiggle.dispose();
     _settle.dispose();
     super.dispose();
@@ -350,121 +306,37 @@ class _StickerGridState extends State<StickerGrid>
   @override
   Widget build(BuildContext context) {
     if (widget.stickers.isEmpty) {
-      // No stickers: brand block sits at the top of the board.
+      // No stickers: placeholder fills the board above the footer's
+      // own inset, so the grid never ends mid-air behind it.
       return SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const SizedBox(height: 8),
             _buildEmptyState(),
+            SizedBox(height: 8 + widget.bottomInset),
           ],
         ),
       );
     }
-
-    // With stickers: same brand block, but living INSIDE the grid as an
-    // ever-present footer after the last row (scrolls with the content).
     return _buildGrid();
   }
 
-  /// Logo + wordmark + rotating fun CTA + big arrow pointing at the
-  /// sheet below. Any tap on the empty state spins a new line; picks
-  /// happen straight from the sheet thumbnails (the arrow's own tap
-  /// just bounces).
+  /// The placeholder block: brand art + CTA + Get Max pill, sitting in
+  /// the scroll content just above the footer chevron.
   Widget _buildEmptyState() {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _rotatePickLine,
-      child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Max lockup stands alone — no logo above it.
-        if (!widget.isMax) ...[
-          Image.asset(
-            'assets/logo3.png',
-            width: 160,
-            fit: BoxFit.contain,
-          ),
-          const SizedBox(height: 8),
-        ],
-        // Wordmark with the shape-toggle shadow indicator behind
-        // it: square shadow the same height as the image,
-        // centered. Hidden when the cell backdrops are off.
-        // Taps toggle like the appbar wordmark.
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            AppHaptics.tap();
-            widget.onToggleShapeBg?.call();
-          },
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              AnimatedOpacity(
-                opacity: widget.shapeBg ? 1.0 : 0.0,
-                duration: AppMotion.standard,
-                  child: WordmarkShadow(
-                    height: 90 * widget.markScale,
-                    shape: kStyleShapes[widget.indicatorShape
-                        .clamp(0, kStyleShapes.length - 1)],
-                    color: widget.indicatorColor,
-                    // Max lockup is wider: fixed 65% shadow width.
-                    widthRatio: widget.isMax ? 0.65 : 1.0,
-                  ),
-              ),
-                Image.asset(
-                  widget.isMax
-                      ? 'assets/stickerpantsmax.webp'
-                      : 'assets/stickerpants.webp',
-                  width: 180,
-                  fit: BoxFit.contain,
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _pickLines[_lineIndex],
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Colors.grey.shade600,
-          ),
-        ).animate(key: ValueKey(_lineIndex)).fadeIn(
-              duration: AppMotion.standard,
-              curve: AppMotion.appleEase,
-            ),
-        const SizedBox(height: 8),
-        // Arrow: tap plays the jelly bounce + haptic. Fixed art/angle.
-        // Shrinks one step per saved sticker; gone at 31.
-        if (_arrowScale > 0)
-          Transform.rotate(
-            angle: _arrowDeg * math.pi / 180,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _bounceArrow,
-              child: AnimatedBuilder(
-                animation: _arrowWobble,
-                builder: (context, child) {
-                  // Decaying sine wobble = jelly.
-                  final t = _arrowWobble.value;
-                  final s =
-                      1.0 + 0.18 * math.sin(t * 2 * math.pi) * (1 - t);
-                  return Transform.scale(scale: s, child: child);
-                },
-                child: Opacity(
-                  // Fade the last 15% of its life so it never clips
-                  // ugly — it dissolves, not shrinks into a sliver.
-                  opacity: (_arrowScale / 0.15).clamp(0.0, 1.0),
-                  child: Image.asset(
-                    'assets/arrow2.webp',
-                    height: _arrowHeight * _arrowScale,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-      ),
+    return StickerPlaceholder(
+      isMax: widget.isMax,
+      shapeBg: widget.shapeBg,
+      markScale: widget.markScale,
+      indicatorShape: widget.indicatorShape,
+      indicatorColor: widget.indicatorColor,
+      onToggleShapeBg: widget.onToggleShapeBg,
+      onGetMax: widget.onGetMax,
+      onTap: widget.jiggling
+          ? () => widget.onExitJiggle?.call()
+          : () => widget.onFooterTap?.call(),
+      debugFill: widget.debugFooterFill,
     );
   }
 
@@ -561,9 +433,9 @@ class _StickerGridState extends State<StickerGrid>
                     ),
                   ),
                 ),
-                // Ever-present brand footer INSIDE the grid: sits right
-                // after the last row, scrolls with the content, and its
-                // bottom padding keeps it clear of the gallery sheet.
+                // Scroll-end spacer: one grid row so the last row can breathe,
+                // then the placeholder block, then the footer's height
+                // so nothing hides under the pinned chevron.
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.only(

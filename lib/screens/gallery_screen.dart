@@ -7,7 +7,6 @@ import 'dart:ui';
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:photo_manager/photo_manager.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -20,13 +19,16 @@ import '../services/growth_service.dart';
 import '../services/moment_paywall_service.dart';
 import '../services/pro_access_service.dart';
 import '../services/revenuecat_service.dart';
+import '../services/recent_picks_service.dart';
 import '../services/sticker_style_service.dart';
 import '../services/subject_cutout_service.dart';
 import '../services/widget_service.dart';
-import '../widgets/gallery_bottom_sheet.dart';
+import '../widgets/embedded_picker_sheet.dart';
 import '../widgets/genie_flight.dart';
+import '../widgets/bounce_chevron.dart';
 import '../widgets/sticker_grid.dart';
-import '../widgets/wordmark_shadow.dart';
+import '../widgets/wordmark_lockup.dart';
+import 'photo_preview_screen.dart';
 import 'expired_upsell_sheet.dart';
 import 'max_thankyou_sheet.dart';
 import 'sticker_detail_screen.dart';
@@ -38,6 +40,27 @@ class NotesColors {
   static const text = Color(0xFFFFFFFF);
   static const sub = Color(0xFF98989E);
   static const yellow = Color(0xFFFFD60A); // notes accent
+}
+
+/// Pick data minted before the preview opens: the route builder needs
+/// everything synchronously when the flight starts.
+typedef PreviewSavedCallback = void Function(
+    String path, StickerStyle style);
+
+class GalleryPickData {
+  final String assetId;
+  final String imagePath;
+  final String heroTag;
+  final int shapeIndex;
+  final PreviewSavedCallback onSaved;
+
+  const GalleryPickData({
+    required this.assetId,
+    required this.imagePath,
+    required this.heroTag,
+    required this.shapeIndex,
+    required this.onSaved,
+  });
 }
 
 class GalleryScreen extends StatefulWidget {
@@ -52,7 +75,6 @@ class GalleryScreen extends StatefulWidget {
 class _GalleryScreenState extends State<GalleryScreen>
     with WidgetsBindingObserver {
   List<OutfitSticker> _stickers = [];
-  final _sheetKey = GlobalKey<GalleryBottomSheetState>();
   final _gridController = ScrollController();
   final _bodyKey = GlobalKey();
   late final ConfettiController _confettiPop;
@@ -70,6 +92,15 @@ class _GalleryScreenState extends State<GalleryScreen>
 
   /// Delete mode: stickers shake with × badges.
   bool _jiggling = false;
+
+  /// Footer swipe haptics: one light tick per 28px of upward travel.
+  static const double _footerTickStep = 28.0;
+  double _footerHapticAccum = 0;
+
+  /// Live upward pull of the footer strip while swiping (chevron rides
+  /// it). Springs home on release unless the swipe launched.
+  double _footerDragDy = 0.0;
+  static const double _footerMaxPull = 200.0;
 
   /// Solid M3 shape backdrop behind small grid stickers. Toggleable
   /// from the appbar wordmark; persisted next to stickers.json.
@@ -114,7 +145,6 @@ class _GalleryScreenState extends State<GalleryScreen>
   bool _undoConsumed = false;
 
   void _dismissSheet() {
-    _sheetKey.currentState?.collapse();
     FocusManager.instance.primaryFocus?.unfocus();
   }
 
@@ -438,13 +468,7 @@ class _GalleryScreenState extends State<GalleryScreen>
     if (mounted) setState(() {});
   }
 
-  /// Max subscribers get the Max lockup everywhere the wordmark shows.
-  String get _wordmarkAsset =>
-      RevenueCatService.instance.isPro
-          ? 'assets/stickerpantsmax.webp'
-          : 'assets/stickerpants.webp';
-
-  /// Max lockup stands alone — the pants logo hides wherever it shows.
+    /// Max lockup stands alone — the pants logo hides wherever it shows.
   /// Sticky state (not strict entitlement): offline/cold starts keep
   /// painting Max until a definitive update says otherwise.
   bool get _isMax => RevenueCatService.instance.isProSticky;
@@ -469,6 +493,9 @@ class _GalleryScreenState extends State<GalleryScreen>
   void _toggleShapeBg() {
     AppHaptics.tap();
     setState(() {
+      // Shape advances on EVERY toggle (hidden taps included), so the
+      // silhouette is always moving — otherwise the visible-on taps
+      // looked like a color-only change.
       _shapeBgOn = !_shapeBgOn;
       _indicatorShape = (_indicatorShape + 1) % kStyleShapes.length;
       _indicatorColorIndex++;
@@ -571,50 +598,46 @@ class _GalleryScreenState extends State<GalleryScreen>
     return true;
   }
 
-  Future<void> _onGalleryPick(AssetEntity asset) async {
+  Future<void> _onGalleryPick(String imagePath) async {
     if (!await _passesCreateGate()) return;
-    String? pickedPath;
-    try {
-      // Preferred: read the original bytes and write a fresh temp file.
-      // asset.originFile can return stale/empty cache entries which fail
-      // to decode downstream ("Invalid image data").
-      final bytes = await asset.originBytes;
-      if (bytes != null && bytes.isNotEmpty) {
-        final dir = await getTemporaryDirectory();
-        final f = File(
-          '${dir.path}/pick_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        );
-        await f.writeAsBytes(bytes);
-        pickedPath = f.path;
-      } else {
-        final origin = await asset.originFile;
-        pickedPath = origin?.path;
-      }
-    } catch (_) {
-      final origin = await asset.originFile;
-      pickedPath = origin?.path;
-    }
-    if (pickedPath == null || !mounted) return;
-    final imagePath = pickedPath;
+    if (!mounted) return;
+    // File into the sheet's recents grid (fire-and-forget).
+    unawaited(RecentPicksService.remember(imagePath));
     // Id minted upfront so the preview and the future grid cell share
-    // one Hero tag for the genie flight home. Shape rolls from the
-    // asset id — the same seed its sheet thumbnail shows.
+    // one Hero tag for the genie flight home. Shape rolls from the id.
     final stickerId = const Uuid().v4();
-    // Warm the image cache so the container-transform flight isn't
-    // swallowed by first-frame decode.
+    // Warm the image cache so the flight isn't swallowed by
+    // first-frame decode.
     try {
       await precacheImage(FileImage(File(imagePath)), context);
     } catch (_) {}
     if (!mounted) return;
-    // The sheet's OpenContainer performs the app-launch-style open:
-    // thumbnail blob expands into the fullscreen (closed→open morph).
-    _sheetKey.currentState?.openPreview(
+    _openPreview(
       GalleryPickData(
-        assetId: asset.id,
+        assetId: stickerId,
         imagePath: imagePath,
         heroTag: 'sticker-$stickerId',
-        shapeIndex: randomShapeIndexForAsset(asset.id),
+        shapeIndex: fallbackShapeIndex(stickerId),
         onSaved: (path, style) => _insertSticker(stickerId, path, style),
+      ),
+    );
+  }
+
+  /// Pushes the preview on the genie route (non-opaque: the preview
+  /// frosts the live grid behind it).
+  void _openPreview(GalleryPickData data) {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      geniePageRoute(
+        open: const Duration(milliseconds: 380),
+        page: PhotoPreviewScreen(
+          imagePath: data.imagePath,
+          heroTag: data.heroTag,
+          initialShapeIndex: data.shapeIndex,
+          onSaved: data.onSaved,
+          pickHeroTag: 'pick-${data.assetId}',
+          autoCutout: true,
+        ),
       ),
     );
   }
@@ -743,27 +766,16 @@ class _GalleryScreenState extends State<GalleryScreen>
             // state — cycling shape each tap.
             GestureDetector(
               onTap: _toggleShapeBg,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  AnimatedOpacity(
-                    opacity: _shapeBgOn ? 1.0 : 0.0,
-                    duration: AppMotion.standard,
-                    child: WordmarkShadow(
-                      height: 57 * _markScale,
-                      shape: kStyleShapes[_indicatorShape
-                          .clamp(0, kStyleShapes.length - 1)],
-                      color: _indicatorColor,
-                      // Max lockup is wider: fixed 65% shadow width.
-                      widthRatio: _isMax ? 0.65 : 1.0,
-                    ),
-                  ),
-                  Image.asset(
-                    _wordmarkAsset,
-                    height: 57,
-                    fit: BoxFit.contain,
-                  ),
-                ],
+              child: WordmarkLockup(
+                isMax: _isMax,
+                // Art and backing shape scale together, so the shadow
+                // stays exactly 1:1 with the wordmark at any markScale
+                // (scaling only the shape skewed the proportions).
+                imageHeight: 57 * _markScale,
+                shadowHeight: 57 * _markScale,
+                shapeIndex: _indicatorShape,
+                color: _indicatorColor,
+                shadowVisible: _shapeBgOn,
               ),
             ),
           ],
@@ -803,6 +815,19 @@ class _GalleryScreenState extends State<GalleryScreen>
                 isMax: _isMax,
                 m3Thumbs: _m3Thumbs,
                 onToggleM3Thumbs: _toggleM3Thumbs,
+                onGetMax: () => MomentPaywallService.maybeShow(
+                  context,
+                  placement: 'empty_state',
+                  locked: true,
+                ),
+                onFooterTap: () {
+                  if (_jiggling) {
+                    _exitJiggle();
+                  } else {
+                    _onFabGallery();
+                  }
+                },
+                debugFooterFill: false,
                 indicatorColor: _indicatorColor,
                 shapeScale: 1.0,
                 markScale: _markScale,
@@ -815,28 +840,65 @@ class _GalleryScreenState extends State<GalleryScreen>
                 onLanded: () {
                   if (mounted) setState(() => _justAddedId = null);
                 },
-                bottomInset: GalleryBottomSheet.peekHeight +
-                    MediaQuery.of(context).padding.bottom,
+                bottomInset: MediaQuery.of(context).padding.bottom + 72,
               ),
             ),
           ),
-          // Resizable one-row gallery sheet replaces the + button.
-          // Tapping away (grid above) collapses it via _dismissSheet,
-          // plus the sheet itself collapses on TapRegion outside-tap
-          // and on focus loss. Sheet taps also exit delete mode.
+          // Pinned footer: the chevron only, centered on the absolute
+          // bottom. The placeholder block lives in the grid's scroll
+          // content just above it.
+          // Footer strip: pinned to the absolute bottom, owns the chevron and
+          // the whole swipe/tap gesture. Drag the chevron up or tap it
+          // (or the strip) to open the gallery picker; dragging the
+          // strip itself past threshold does the same.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () {
-                if (_jiggling) _exitJiggle();
+              behavior: HitTestBehavior.opaque,
+              onTap: _onFabGallery,
+              onVerticalDragUpdate: (d) {
+                // Only upward travel; the whole strip (chevron
+                // included) rides the finger.
+                setState(() {
+                  _footerDragDy = (_footerDragDy + d.delta.dy)
+                      .clamp(-_footerMaxPull, 0.0);
+                });
+                if (d.delta.dy < 0) _footerHapticAccum -= d.delta.dy;
+                while (_footerHapticAccum >= _footerTickStep) {
+                  _footerHapticAccum -= _footerTickStep;
+                  AppHaptics.tap();
+                }
+                if (_footerHapticAccum < 0) _footerHapticAccum = 0;
               },
-              child: GalleryBottomSheet(
-                key: _sheetKey,
-                onPick: _onGalleryPick,
-                m3Thumbs: _m3Thumbs,
+              onVerticalDragEnd: (d) {
+                final flung = (d.primaryVelocity ?? 0) < -300;
+                final pulled = _footerDragDy < -60;
+                setState(() => _footerDragDy = 0.0);
+                _footerHapticAccum = 0;
+                if (flung || pulled) {
+                  AppHaptics.launch();
+                  _onFabGallery();
+                }
+              },
+              child: Transform.translate(
+                offset: Offset(0, _footerDragDy),
+                child: Container(
+                  // Transparent: the board reads continuous to the
+                  // screen edge, and only the chevron marks the footer.
+                  color: Colors.transparent,
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).padding.bottom,
+                    top: 32,
+                  ),
+                  child: Center(
+                    child: BounceChevron(
+                      onLaunch: _onFabGallery,
+                      dragOffset: _footerDragDy,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -877,6 +939,13 @@ class _GalleryScreenState extends State<GalleryScreen>
         ),
       ),
     );
+  }
+
+  /// Footer trigger: system gallery picker, then the standard pick flow.
+  Future<void> _onFabGallery() async {
+    AppHaptics.launch();
+    final path = await pickGalleryImage(context);
+    if (path != null && mounted) _onGalleryPick(path);
   }
 
   /// Five-point star path for confetti pieces (drawn in a 10x10 box).

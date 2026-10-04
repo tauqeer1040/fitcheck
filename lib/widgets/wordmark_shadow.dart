@@ -24,7 +24,13 @@ class WordmarkShadow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Keyed by shape: M3Clipper.shouldReclip unconditionally returns
+    // false, so without this the RenderClipPath keeps its first-ever
+    // clip and the silhouette freezes (color still updates, which is
+    // why toggles looked color-only). A shape change remounts the
+    // container and computes a fresh clip.
     return M3Container(
+      key: ValueKey(shape),
       shape,
       width: height * widthRatio,
       height: height,

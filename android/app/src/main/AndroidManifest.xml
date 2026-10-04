@@ -1,13 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Android 13+ granular media permissions: images only. Video is
-         intentionally omitted: the app never reads videos. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <!-- No broad media permissions: gallery goes through the Android
+         photo picker (no runtime permission needed). Camera only. -->
+    <uses-permission android:name="android.permission.CAMERA" />
     <!-- Pre-Android 13 fallback -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- androidx.photopicker declares minSdk 34 (embedded grid is
+         Android 14+ only); only ever instantiated there, guarded by
+         isAvailable + try/catch, so force the merge. -->
+    <uses-sdk tools:overrideLibrary="androidx.photopicker" />
     <!-- Stripped: the merger auto-adds these for an ancient tflite GPU
          manifest (targetSdk < 4) and for Firebase measurement. Nothing
          in the app reads the phone state, writes shared storage, or
@@ -32,6 +35,7 @@
          inexact allow-while-idle by design). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
         <!-- Single-image picking via photo picker (no runtime permission needed) -->
+    <!-- Camera for the take-a-photo path (image_picker). -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PICK"/>

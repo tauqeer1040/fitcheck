@@ -96,6 +96,12 @@ flutter {
     source = "../.."
 }
 
+dependencies {
+    // Inline system photo grid (debug Picker Lab / native mode).
+    // Alpha Jetpack lib — no broad storage permission involved.
+    implementation("androidx.photopicker:photopicker:1.0.0-alpha01")
+}
+
 // AGP 9 hides the legacy android-DSL implementations (android.newDsl is
 // false via the Flutter template), so new-DSL-only settings go through
 // the public ApplicationExtension interface, which stays available.

@@ -108,6 +108,10 @@ class ShapedSticker extends StatelessWidget {
               rotate: rotateSilhouette,
               rotationPeriod: rotationPeriod,
               card: M3Container(
+                // Keyed by shape for the same reason as WordmarkShadow:
+                // M3Clipper.shouldReclip is hardcoded false, so a shape
+                // change on a reused element would keep the stale clip.
+                key: ValueKey(shape),
                 shape,
                 color: Color(dominantColor),
                 child: const SizedBox.expand(),

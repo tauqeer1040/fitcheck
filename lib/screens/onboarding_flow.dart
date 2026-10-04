@@ -9,8 +9,6 @@ import 'package:flutter_confetti/flutter_confetti.dart';
 import 'package:flutter_m3shapes/flutter_m3shapes.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:photo_manager/photo_manager.dart';
-import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -20,6 +18,8 @@ import '../services/analytics_service.dart';
 import '../services/growth_service.dart';
 import '../services/moment_paywall_service.dart';
 import '../services/notification_service.dart';
+import '../services/recent_picks_service.dart';
+import '../widgets/embedded_picker_sheet.dart';
 import '../services/revenuecat_service.dart';
 import '../services/preset_stickers_service.dart';
 import '../services/roast_service.dart';
@@ -232,35 +232,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     return lines;
   }
 
-  /// A photo was picked on the First Wish page: prep the file for the
-  /// cutout pipeline, advance when ready.
-  Future<void> _onWishPicked(AssetEntity asset) async {
+  /// A photo was picked on the First Wish page: advance it through the
+  /// cutout pipeline. [photoPath] is a system-picker / camera file.
+  Future<void> _onWishPicked(String photoPath) async {
     if (_wishSaving) return;
     _wishSaving = true;
-    String? pickedPath;
-    try {
-      // Same preference order as the gallery: fresh bytes over possibly
-      // stale cache entries.
-      final bytes = await asset.originBytes;
-      if (bytes != null && bytes.isNotEmpty) {
-        final dir = await getTemporaryDirectory();
-        final f = File(
-          '${dir.path}/wish_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        );
-        await f.writeAsBytes(bytes);
-        pickedPath = f.path;
-      } else {
-        pickedPath = (await asset.originFile)?.path;
-      }
-    } catch (_) {
-      pickedPath = (await asset.originFile)?.path;
-    }
-    if (!mounted) return;
-    final photoPath = pickedPath;
-    if (photoPath == null) {
-      _wishSaving = false;
-      return;
-    }
+    // File into the sheet's recents grid (fire-and-forget).
+    unawaited(RecentPicksService.remember(photoPath));
     _wishImagePath = photoPath;
     // The id minted here is the one the finished cutout saves under, so
     // the sticker and the grid cell share it.
@@ -793,19 +771,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   Future<void> _enterApp() async {
-    // Photo permission fires here, back-to-back after notifications —
-    // no custom pre-dialog. Denials are handled later at the gallery
-    // sheet (rationale + Settings deep-link).
-    try {
-      await PhotoManager.requestPermissionExtend(
-        requestOption: const PermissionRequestOption(
-          androidPermission: AndroidPermission(
-            type: RequestType.image,
-            mediaLocation: false,
-          ),
-        ),
-      );
-    } catch (_) {}
+    // No photo permission: gallery goes through the system photo picker
+    // and camera intent, both permission-free.
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_completedKey, true);
@@ -2642,12 +2609,12 @@ class _QuestionRow extends StatelessWidget {
   );
 }
 
-/// First Wish — same copy-box padding as the question screens. The pill
-/// asks for photo access; on grant a photo sheet slides up from the
-/// bottom ("Pick your first outfit") and the pick flows into the same
-/// cutout pipeline the grid uses ([_OnboardingFlowState._onWishPicked]).
+/// First Wish — same copy-box padding as the question screens. Two
+/// actions: camera first, system photo picker second. The pick flows
+/// into the same cutout pipeline the grid uses
+/// ([_OnboardingFlowState._onWishPicked]).
 class _FirstWishPage extends StatefulWidget {
-  final ValueChanged<AssetEntity> onPicked;
+  final ValueChanged<String> onPicked;
   final VoidCallback onBack;
   final String displayName;
   final double copySide;
@@ -2676,17 +2643,10 @@ class _FirstWishPage extends StatefulWidget {
 
 class _FirstWishPageState extends State<_FirstWishPage> {
   bool _busy = false;
-  bool _askedOnce = false;
-
-  /// Already granted (a previous run, or the user granted it earlier in
-  /// Settings): there is nothing to ask for, so the button stops saying
-  /// "Allow photo access" and becomes the plain action it is.
-  bool _granted = false;
 
   @override
   void initState() {
     super.initState();
-    _checkPermission();
     if (widget.autoOpen) _autoOpen();
   }
 
@@ -2696,120 +2656,32 @@ class _FirstWishPageState extends State<_FirstWishPage> {
     if (widget.autoOpen && !oldWidget.autoOpen) _autoOpen();
   }
 
-  /// Open the sheet on the frame after the page turn lands, and tell the
-  /// flow it was served so a later rebuild does not re-open it.
+  /// Open the gallery picker on the frame after the page turn lands,
+  /// and tell the flow it was served so a later rebuild does not
+  /// re-open it.
   void _autoOpen() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !widget.autoOpen) return;
       widget.onAutoOpenHandled?.call();
-      unawaited(_allowAccess());
+      unawaited(_pickGallery());
     });
   }
 
-  Future<void> _checkPermission() async {
-    try {
-      final state = await PhotoManager.getPermissionState(
-        requestOption: const PermissionRequestOption(
-          androidPermission: AndroidPermission(
-            type: RequestType.image,
-            mediaLocation: false,
-          ),
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        _granted = state.hasAccess;
-        _askedOnce = _askedOnce || _granted;
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _allowAccess() async {
+  Future<void> _pickGallery() async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      // Already granted: straight to the picker, no OS prompt.
-      if (_granted) {
-        _askedOnce = true;
-        AppHaptics.step();
-        await _openSheet();
-        return;
-      }
-      final permission = await PhotoManager.requestPermissionExtend(
-        requestOption: const PermissionRequestOption(
-          androidPermission: AndroidPermission(
-            type: RequestType.image,
-            mediaLocation: false,
-          ),
-        ),
-      );
-      if (!mounted) return;
-      if (!permission.hasAccess) {
-        // Second denial: the OS popup is gone for good — explain and
-        // offer Settings instead of asking into the void.
-        if (_askedOnce) {
-          final go = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              backgroundColor: const Color(0xFF2C2C2E),
-              title: const Text('Photo access needed'),
-              content: const Text(
-                'StickerPants needs access to your photos to digitize '
-                'your first fit. Enable it in Settings to continue.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Not now'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Open Settings'),
-                ),
-              ],
-            ),
-          );
-          if (go == true) await PhotoManager.openSetting();
-        }
-        _askedOnce = true;
-        return;
-      }
-      _askedOnce = true;
-      _granted = true;
-      await _openSheet();
+      AppHaptics.step();
+      // Same Lab routing as the home sheet: System vs Native embedded.
+      final path = await pickGalleryImage(context);
+      if (path != null && mounted) widget.onPicked(path);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  /// The photo grid, newest first. Shared by the fresh-grant path and the
-  /// already-granted path so both open the same sheet.
-  Future<void> _openSheet() async {
-    AppHaptics.step();
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.6),
-      builder: (sheetContext) => DraggableScrollableSheet(
-        initialChildSize: 0.65,
-        minChildSize: 0.4,
-        maxChildSize: 0.92,
-        expand: false,
-        builder: (context, scrollController) => _FirstWishPhotoSheet(
-          scrollController: scrollController,
-          onPick: (asset) {
-            Navigator.of(sheetContext).pop();
-            widget.onPicked(asset);
-          },
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final label = _busy ? 'Opening\u2026' : 'Allow photo access';
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: widget.copySide),
       child: Column(
@@ -2847,38 +2719,33 @@ class _FirstWishPageState extends State<_FirstWishPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  // The action wears the same card the answer rows use:
-                  // full copy-box width, 18px radius, white 12% fill and
-                  // 35% edge, 56pt tall.
+                  // Gallery only — same card recipe as the answer rows:
+                  // full copy-box width, 18px radius, 56pt tall, primary
+                  // white pill.
                   Opacity(
                     opacity: _busy ? 0.5 : 1,
                     child: Material(
-                      color: Colors.white.withValues(alpha: 0.12),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
                       child: InkWell(
-                        onTap: _busy ? null : _allowAccess,
+                        onTap: _busy ? null : _pickGallery,
                         borderRadius: BorderRadius.circular(18),
                         child: Container(
                           height: 56,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.35),
-                            ),
-                          ),
+                          alignment: Alignment.center,
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               const Icon(
                                 Icons.photo_library_outlined,
                                 size: 20,
-                                color: Colors.white,
+                                color: Colors.black,
                               ),
                               const SizedBox(width: 10),
                               Text(
-                                label,
+                                _busy ? 'Opening…' : 'Choose from gallery',
                                 style: const TextStyle(
-                                  color: Colors.white,
+                                  color: Colors.black,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -2896,135 +2763,6 @@ class _FirstWishPageState extends State<_FirstWishPage> {
           ),
           _CtaRow(onNext: null, onBack: widget.onBack),
           SizedBox(height: widget.ctaBottom),
-        ],
-      ),
-    );
-  }
-}
-
-/// The First Wish photo sheet: slides up from the bottom on grant,
-/// newest photos in a grid under its title. A tap picks exactly one.
-class _FirstWishPhotoSheet extends StatefulWidget {
-  final ScrollController scrollController;
-  final ValueChanged<AssetEntity> onPick;
-  const _FirstWishPhotoSheet({
-    required this.scrollController,
-    required this.onPick,
-  });
-
-  @override
-  State<_FirstWishPhotoSheet> createState() => _FirstWishPhotoSheetState();
-}
-
-class _FirstWishPhotoSheetState extends State<_FirstWishPhotoSheet> {
-  bool _ready = false;
-  List<AssetEntity> _recent = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      // Newest-first, from the synthetic "All photos" album so every
-      // gallery folder is covered — same query as the homescreen sheet.
-      final albums = await PhotoManager.getAssetPathList(
-        type: RequestType.image,
-        onlyAll: true,
-        filterOption: FilterOptionGroup(
-          orders: const [OrderOption(type: OrderOptionType.createDate)],
-        ),
-      );
-      if (albums.isNotEmpty) {
-        final all = albums.firstWhere(
-          (a) => a.isAll,
-          orElse: () => albums.first,
-        );
-        final recent = await all.getAssetListRange(start: 0, end: 120);
-        if (!mounted) return;
-        setState(() {
-          _recent = recent;
-          _ready = true;
-        });
-        return;
-      }
-    } catch (_) {}
-    if (mounted) setState(() => _ready = true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-        border: Border(top: BorderSide(color: Color(0x1FFFFFFF))),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 10),
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Pick your first outfit',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: !_ready
-                ? const Center(child: CircularProgressIndicator())
-                : _recent.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No photos found',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  )
-                : GridView.builder(
-                    controller: widget.scrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                        ),
-                    itemCount: _recent.length,
-                    itemBuilder: (context, i) {
-                      final asset = _recent[i];
-                      return GestureDetector(
-                        onTap: () {
-                          AppHaptics.tap();
-                          widget.onPick(asset);
-                        },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: AssetEntityImage(
-                            asset,
-                            isOriginal: false,
-                            thumbnailSize: const ThumbnailSize(256, 256),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) =>
-                                Container(color: Colors.grey.shade800),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
         ],
       ),
     );

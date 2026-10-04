@@ -82,16 +82,6 @@ int fallbackShapeIndex(String id) {
   return i % kFreeShapeCount;
 }
 
-/// Stable RANDOM shape for a gallery photo: seeded by the photo's
-/// asset id, so it looks random but never flickers while scrolling —
-/// and the sheet thumb matches the shape the sticker will get when
-/// that photo is picked. The fullscreen view re-rolls fresh shapes.
-int randomShapeIndexForAsset(String assetId) {
-  final i = math.Random(assetId.hashCode).nextInt(kStyleShapes.length);
-  if (RevenueCatService.instance.isPro) return i;
-  return i % kFreeShapeCount;
-}
-
 class StickerStyleService {
   StickerStyleService._();
 

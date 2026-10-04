@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
 import '../widgets/genie_flight.dart';
+import '../widgets/morphing_image_indicator.dart';
 import '../services/sticker_style_service.dart';
 import '../services/subject_cutout_service.dart';
 import '../widgets/morphing_shape_clip.dart';
@@ -75,11 +76,11 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   /// analysis lands; until then the neutral fill is used.
   StickerStyle? _style;
 
-  /// Backdrop tint wash: the photo's dominant color from the same
-  /// analysis that picks the sticker shadow color, laid translucent
-  /// behind the rotating bordered shape. Loads on open (64px thumb,
-  /// milliseconds) — never blocks the entrance.
-  Color? _bgTint;
+  /// Profile analysis seed: the M3 style of the source photo, loaded
+  /// on open (64px thumb, milliseconds) so a later cutout skips
+  /// re-analyzing. (Its dominant color used to wash the backdrop red —
+  /// removed: it read as an error state.) The fade below still times the
+  /// morphing → static handoff once the cutout lands.
 
   /// Source photo aspect (width / height) from a header-only read, so
   /// the morphing outline can key off the image's own shorter side —
@@ -217,20 +218,18 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     } catch (_) {}
   }
 
-  /// Photo-profile tint for the backdrop: same M3 analysis as the
-  /// sticker shadow color. Fire-and-forget on open.
+  /// Profile analysis seed: same M3 analysis as the sticker shadow
+  /// color. Fire-and-forget on open; seeds [_style] so a later cutout
+  /// skips re-analyzing, and starts the fade that times the morphing →
+  /// static handoff once the cutout lands.
   Future<void> _loadBgTint() async {
     try {
       final style = await StickerStyleService.analyze(widget.imagePath);
       if (!mounted) return;
       setState(() {
-        _bgTint = Color(style.dominantColor);
-        // Seed the style too so a later cutout skips re-analyzing.
+        // Seed the style so a later cutout skips re-analyzing.
         _style ??= style;
       });
-      // Ease the wash in — the analysis lands a beat after the route
-      // does, and snapping the color on in a single frame was the
-      // hiccup felt on the way into the preview.
       _bgFadeController.forward();
     } catch (_) {}
   }
@@ -519,6 +518,11 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     return Offset(clampedLeft.toDouble(), clampedTop.toDouble());
   }
 
+  /// Flat processing backdrop: the photo's own dominant shade (neutral
+  /// until the analysis lands).
+  Color get _profileColor =>
+      Color(_style?.dominantColor ?? kFallbackStickerColor);
+
   /// The photo as a shaped card: silver shimmer while the subject is cut
   /// out, then the collapse morph. The card morphs IN PLACE — it shrinks
   /// into the solid silhouette where it sits, never gliding toward the
@@ -527,6 +531,21 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
   /// invisible with the silhouette holding until the cutout's own card
   /// lands on top of it.
   Widget _buildBackgroundPhoto(Size size, double targetW, double targetH) {
+    // Processing: the giant photo-morph square on the flat profile
+    // field — no photo card, no shimmer, no frost. The square is 90% of
+    // the screen width on each side (1:1), centered, leaving a
+    // profile-color margin around it.
+    if (_state == _CutoutState.processing) {
+      final side = size.width * 0.9;
+      return Center(
+        child: MorphingImageIndicator(
+          imageProvider: FileImage(File(widget.imagePath)),
+          color: Colors.white,
+          fillBox: true,
+          constraints: BoxConstraints.tight(Size(side, side)),
+        ),
+      );
+    }
     // Edge-to-edge width; the rotating border keeps its own (smaller,
     // square) size centered on top as a border-only overlay.
     final bgW = size.width;
@@ -568,26 +587,20 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                   width: w,
                   height: h,
                   child: MorphingShapeClip(
-                    // Static full-bleed image (no clip) with the morphing
-                    // outline tracing on top at its own square size.
-                    // The shrink comes later, as a spring behind the
-                    // emerging cutout.
+                    // The photo lives INSIDE the morphing M3 window: it
+                    // breathes through the spinning shapes while the
+                    // subject is cut out. The shrink comes later, as a
+                    // spring behind the emerging cutout.
                     endScale: 1.0,
                     shrinkDuration: const Duration(seconds: 4),
-                    clipChild: false,
-                    // The mask is held off until the pick flight lands
-                    // (see [_landed]): while the photo is still expanding
-                    // the card is pure full-bleed art, so the pick reads
-                    // as the tapped thumbnail growing into the picture.
-                    // The shape then closes in over the last stretch of
-                    // the route.
+                    clipChild: true,
+                    // Full-bleed photo: the pick reads as the tapped
+                    // thumbnail growing into the picture, with the
+                    // morphing outline riding on top at its own size.
                     //
-                    // Profile hue outside the shape: the photo only
-                    // shows through the shape's own window, and the wash
-                    // fades rather than snapping.
-                    outsideColor: _bgTint?.withValues(
-                      alpha: _bgAlpha * _landed,
-                    ),
+                    // No profile-hue mask: the red wash over everything
+                    // outside the shape window read as an error state.
+                    // The photo shows full-bleed with the shimmer sweep.
                     // Hug the photo: landscape → its height, portrait
                     // → its width (null until the header read lands).
                     childAspectRatio: _imageAspect,
@@ -668,25 +681,9 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
     return Hero(tag: tag, createRectTween: stickerFlightTween, child: child);
   }
 
-  /// How far the pick flight has landed: 0 while the tapped thumbnail is
-  /// still expanding into the photo, 1 once it is home.
-  ///
-  /// The whole finished preview card used to fly as one widget, so what
-  /// the user saw was a postage-stamp-sized copy of the outline + shape
-  /// window + picture blowing up to full size — abrupt, and the opposite
-  /// of a Material app launch. Now only the full-bleed photo expands,
-  /// and the outline, the mask and the profile wash close in over the
-  /// last stretch of the route.
-  double get _landed {
-    final t = _routeAnim?.value ?? 1.0;
-    // Hold the chrome off for the first ~60% of the flight: the photo
-    // must still be visibly expanding when the outline starts to draw.
-    return Curves.easeOut.transform(((t - 0.6) / 0.4).clamp(0.0, 1.0));
-  }
-
-  /// Rebuilds on every frame of the pick route's own animation, which is
-  /// what [_landed] reads — the route drives the reveal, so there is no
-  /// magic timer to drift out of sync with the transition.
+  /// Rebuilds on every frame of the pick route's own animation — the
+  /// route drives the reveal, so there is no magic timer to drift out
+  /// of sync with the transition.
   Widget _routeRevealed(Widget Function() build) {
     final anim = _routeAnim;
     if (anim == null) return build();
@@ -695,9 +692,8 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
 
   /// Silver shimmer wave — the progress indicator while the subject is
   /// cut out. Wraps the PHOTO itself rather than the whole card, so the
-  /// sweep is bounded by the picture: the profile-color mask covers
-  /// everything outside the floating border, taking the highlight with
-  /// it, and the light never leaks onto the color around the shape.
+  /// sweep is bounded by the picture and the light never leaks onto the
+  /// color around the shape.
   Widget _shimmer(Widget child) {
     return AnimatedBuilder(
       animation: _shimmerController,
@@ -752,25 +748,31 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // Frosted glass — the same recipe the fullscreen sticker view
-          // uses (StickerDetailScreen): σ16 blur of the live grid behind,
-          // plus a 20% black wash. The route must be non-opaque for this
-          // to have anything to blur; on an opaque route it reads black.
-          //
-          // Pre-cutout the profile color sits ON TOP of the glass (the
-          // morphing element's outside fill), so the frost only becomes
-          // the backdrop once that color has collapsed into the sticker.
-          Positioned.fill(
-            child: ClipRect(
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: Container(color: Colors.black.withValues(alpha: 0.20)),
+          // Backdrop. Processing: flat profile color, edge to edge — the
+          // giant photo-morph square floats on the photo's own shade.
+          // After the cutout: the frosted-glass recipe from the
+          // fullscreen sticker view (σ16 blur of the live grid behind,
+          // plus a 20% black wash; the route must be non-opaque for this
+          // to have anything to blur — on an opaque route it reads black).
+          if (_state == _CutoutState.processing)
+            Positioned.fill(
+              child: Container(color: _profileColor),
+            )
+          else
+            Positioned.fill(
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.20),
+                  ),
+                ),
               ),
             ),
-          ),
 
-          // Background photo — shimmer while processing, then the
-          // collapse morph. The card fades ONLY on its own 300ms
+          // Background card — the collapse morph once the cutout lands.
+          // (Processing shows the giant photo-morph square instead, built
+          // in [_buildBackgroundPhoto].) The card fades ONLY on its own 300ms
           // crossfade curve (not the cutout's lift spring — that double
           // fade made the morph read near-instant). It rests as the pure
           // solid silhouette behind the lifted sticker, matching the
@@ -875,8 +877,8 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
               ),
             ),
 
-          // (No processing prompt: the silver shimmer wave over the
-          // photo is the progress indicator.)
+          // (No processing prompt: the giant photo-morph square IS the
+          // progress indicator.)
 
           // Hint once the sticker is ready (long-press still works,
           // but the sticker now lifts and saves on its own).

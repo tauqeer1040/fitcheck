@@ -4,8 +4,9 @@
 -keep class io.flutter.** { *; }
 # Purchases / RevenueCat.
 -keep class com.revenuecat.** { *; }
-# Gallery / media access (photo_manager).
--keep class com.fluttercandies.** { *; }
+# image_picker (photo picker + camera intent).
+# Embedded system photo grid (androidx.photopicker, debug lab only).
+-keep class androidx.photopicker.** { *; }
 # TFLite interpreter (model ops resolve at runtime).
 -keep class org.tensorflow.** { *; }
 # ML Kit segmentation (runs through Play services APIs).
