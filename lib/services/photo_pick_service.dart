@@ -73,18 +73,4 @@ class PhotoPickService {
       return null;
     }
   }
-
-  static Future<String?> takePhoto() async {
-    try {
-      final file = await _picker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.rear,
-      );
-      return file?.path;
-    } on PlatformException {
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
 }

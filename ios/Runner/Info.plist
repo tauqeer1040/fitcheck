@@ -66,8 +66,6 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>Take a photo of your outfit to turn it into a sticker.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Pick a photo of your outfit to turn it into a sticker.</string>
 </dict>

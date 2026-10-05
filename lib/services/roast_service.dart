@@ -55,6 +55,24 @@ class RoastService {
     'Certified Max moment. Frame it twice.',
     'Your closet pays dividends. Collect in compliments.',
     'Beyond the gate, the fits hit different. Case in point.',
+    // Wave 2: Carrot voice — sarcastic about the clothes and the
+    // wearer's habits, never the body. Appended, so earlier indices
+    // (and every free line) stay put.
+    'That jacket has carried three outfits this week. It\'s filing for workers\' comp.',
+    'Bold choice wearing the "good" outfit on a Tuesday. Desperate? Maybe. Iconic? Also maybe.',
+    'Your closet has 40 hangers and you chose... this. Confidence is a superpower.',
+    'Somewhere, your laundry pile just sighed in relief. It gets a day off.',
+    'This outfit peaked in the group chat two hours ago. Still coasting on the likes.',
+    'Rewearing it already? The algorithm flagged it. We overruled. Barely.',
+    'Those shoes have seen things. Mostly the same three sidewalks.',
+    'Fit check: the mirror asked for a minute alone first.',
+    'You dressed like the main character and walked like an extra. We noticed both.',
+    'That color exists in exactly one lighting condition. You found it. Enjoy it while it lasts.',
+    'Premium membership, same three outfits in rotation. The math is aspirational.',
+    'Your wardrobe has range. It ranges from this to... also this.',
+    'We ran the numbers: this fit is 10% outfit, 90% audacity.',
+    'Careful. Wear it one more time this week and it legally becomes a uniform.',
+    'The sticker came out great. The outfit merely came along for the ride.',
   ];
 
   /// Deterministic pick per sticker, so a sticker's roast is stable

@@ -1,8 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <!-- No broad media permissions: gallery goes through the Android
-         photo picker (no runtime permission needed). Camera only. -->
-    <uses-permission android:name="android.permission.CAMERA" />
+         photo picker (no runtime permission needed). No camera path:
+         creating is gallery-only. -->
     <!-- Pre-Android 13 fallback -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -35,7 +35,6 @@
          inexact allow-while-idle by design). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
         <!-- Single-image picking via photo picker (no runtime permission needed) -->
-    <!-- Camera for the take-a-photo path (image_picker). -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PICK"/>

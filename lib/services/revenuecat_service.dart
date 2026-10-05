@@ -102,6 +102,9 @@ class RevenueCatService {
       }
       _initialized = true;
       debugPrint('[RevenueCat] Initialized (entitlement: $entitlementId)');
+      // Warm the offering cache now so the first paywall open is
+      // instant — otherwise it pays the full network fetch on tap.
+      precacheOfferings();
     } catch (e) {
       debugPrint('[RevenueCat] Init failed: $e');
     } finally {
@@ -164,6 +167,9 @@ class RevenueCatService {
         PurchaseParams.package(package),
       );
       _onCustomerInfoUpdated(result.customerInfo);
+      // Eligibility (trials, promos) can change with the new
+      // entitlement — refresh the package cache in the background.
+      unawaited(currentPackages(forceRefresh: true));
       final ent =
           result.customerInfo.entitlements.all[entitlementId];
       final active = ent?.isActive ?? false;
@@ -187,6 +193,7 @@ class RevenueCatService {
     try {
       final info = await Purchases.restorePurchases();
       _onCustomerInfoUpdated(info);
+      unawaited(currentPackages(forceRefresh: true));
       return info.entitlements.all[entitlementId]?.isActive ?? false;
     } catch (_) {
       return false;
@@ -194,21 +201,66 @@ class RevenueCatService {
   }
 
   /// Current offering's packages (monthly/yearly) for the paywall.
-  /// Empty when offerings aren't configured yet or offline.
-  Future<List<Package>> currentPackages() async {
+  ///
+  /// Cached after the first fetch (prefetched at startup): repeat opens
+  /// serve memory instead of hitting the network, which is what made
+  /// every paywall take seconds to show prices. Stale cache (up to
+  /// [_packagesTtl]) still wins over an empty list when offline; a
+  /// failed refresh never clears a good cache. Pass [forceRefresh] to
+  /// skip the cache (purchase/restore paths do this in the background).
+  static const _packagesTtl = Duration(hours: 12);
+
+  List<Package>? _cachedPackages;
+  DateTime? _cachedPackagesAt;
+  Future<List<Package>>? _packagesInflight;
+
+  Future<List<Package>> currentPackages({bool forceRefresh = false}) async {
+    final cached = _cachedPackages;
+    final fresh = cached != null &&
+        _cachedPackagesAt != null &&
+        DateTime.now().difference(_cachedPackagesAt!) < _packagesTtl;
+    if (fresh && !forceRefresh) return cached;
+    // One fetch at a time: concurrent paywall opens share the inflight
+    // request instead of stampeding the network.
+    final inflight = _packagesInflight;
+    if (inflight != null) return inflight;
+    final fut = _fetchPackages();
+    _packagesInflight = fut;
+    try {
+      return await fut;
+    } finally {
+      _packagesInflight = null;
+    }
+  }
+
+  Future<List<Package>> _fetchPackages() async {
     try {
       await ensureInitialized();
       final offerings = await Purchases.getOfferings();
       final pkgs = offerings.current?.availablePackages ?? const [];
+      if (pkgs.isNotEmpty) {
+        _cachedPackages = pkgs;
+        _cachedPackagesAt = DateTime.now();
+      }
       if (kDebugMode) {
         debugPrint('[RevenueCat] offering=${offerings.current?.identifier} '
             'packages=${pkgs.map((p) => '${p.identifier}:${p.storeProduct.priceString}').join(',')}');
       }
-      return pkgs;
+      if (pkgs.isNotEmpty) return pkgs;
+      // Empty fetch (offline / not configured): fall back to the last
+      // good cache instead of showing fallback prices.
+      return _cachedPackages ?? const [];
     } catch (e) {
       debugPrint('[RevenueCat] getOfferings failed: $e');
-      return const [];
+      return _cachedPackages ?? const [];
     }
+  }
+
+  /// Warms the package cache (and the SDK's own offering cache, which
+  /// is what the native sheet reads) so the first paywall open doesn't
+  /// pay the network cost. Fire-and-forget after init.
+  void precacheOfferings() {
+    unawaited(currentPackages());
   }
 
   /// Pulls fresh CustomerInfo (belt-and-braces next to the update
