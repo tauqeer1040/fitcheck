@@ -8,6 +8,8 @@ import 'package:share_plus/share_plus.dart';
 import '../motion/app_haptics.dart';
 import '../services/growth_service.dart';
 import '../services/notification_service.dart';
+import '../services/revenuecat_service.dart';
+import '../services/roast_service.dart';
 
 /// One rotating post-save action, ramadan delight-sheet style: a store
 /// review ask, an app share, a widget nudge, or a reminders opt-in.
@@ -386,11 +388,16 @@ class _GrowthCardState extends State<_GrowthCard>
   }
 
   Future<void> _doShare(BuildContext context) async {
+    // Per-show seed, so the shared line rotates instead of repeating the
+    // same roast for everyone.
+    final shareRoastId =
+        'share:${DateTime.now().millisecondsSinceEpoch ~/ 3600000}';
     try {
       await SharePlus.instance.share(
         ShareParams(
           text: 'StickerPants — turn your outfits into WhatsApp stickers! '
-              'Cut, flick, stick. \u{1F9F3}\u{2728}\n$playStoreUrl',
+              '${RoastService.roastForId(shareRoastId, isMax: RevenueCatService.instance.isPro)} '
+              '\u{1F9F3}\u{2728}\n$playStoreUrl',
           title: 'StickerPants',
         ),
       );

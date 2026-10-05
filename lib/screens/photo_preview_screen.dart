@@ -12,6 +12,8 @@ import '../motion/app_haptics.dart';
 import '../motion/app_motion.dart';
 import '../widgets/genie_flight.dart';
 import '../widgets/morphing_image_indicator.dart';
+import '../services/revenuecat_service.dart';
+import '../services/roast_service.dart';
 import '../services/sticker_style_service.dart';
 import '../services/subject_cutout_service.dart';
 import '../widgets/morphing_shape_clip.dart';
@@ -916,7 +918,7 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
               ),
             ),
 
-          // Hint while hovering: flick anywhere to keep it, or just wait.
+          // Hint while hovering: a roast for this cutout, or just wait.
           if (_state == _CutoutState.lifted)
             Positioned(
               left: 0,
@@ -934,9 +936,16 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Text(
-                      'Flick it anywhere to keep it',
-                      style: TextStyle(color: Colors.white),
+                    // A caption for the cutout, picked off the photo path
+                    // so it's stable for this photo. Not instructions —
+                    // the release-to-save gesture is discoverable by feel.
+                    child: Text(
+                      RoastService.roastForId(
+                        widget.imagePath,
+                        isMax: RevenueCatService.instance.isPro,
+                      ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white),
                     ),
                   ),
                 ),

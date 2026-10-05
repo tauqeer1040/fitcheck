@@ -15,9 +15,15 @@ class AppbarTuning {
   static final ValueNotifier<double> height =
       ValueNotifier<double>(40.0);
 
-  /// Mark box side. Just over one grid cell (71) so the lockup reads
-  /// as a touch more prominent than the stickers below it.
+  /// Mark box side for subscribers (the Max lockup): 75, just over one
+  /// grid cell (71), so it reads a touch more prominent than the stickers.
   static final ValueNotifier<double> logo = ValueNotifier<double>(75.0);
+
+  /// Everyone else gets a lighter default — [logo] scaled by this — so
+  /// the standard lockup sits back on the board. Tracks the slider
+  /// proportionally rather than being a second, conflicting channel.
+  /// 60 at the shipped 75.
+  static const double freeRatio = 60.0 / 75.0;
 
   /// Horizontal side padding. Default matches the grid's gutters.
   static final ValueNotifier<double> padding =

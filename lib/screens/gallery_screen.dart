@@ -501,15 +501,16 @@ class _GalleryScreenState extends State<GalleryScreen>
   ///
   /// Release doesn't kill it: [_releaseGlow] freezes the peak pull and
   /// holds it 1s, then fades it out over the next 1s ([_glowFade]).
-  /// A new drag or a launch clears the linger immediately.
+  /// Launch included — the picker opening must not wipe the light.
+  /// A new drag clears the linger immediately.
   Timer? _glowTimer;
   double _glowPeakPull = 0.0;
   double _glowFade = 1.0;
 
-  void _releaseGlow(double pullAtRelease, {required bool launched}) {
+  void _releaseGlow(double pullAtRelease) {
     _glowTimer?.cancel();
     _glowTimer = null;
-    if (launched || pullAtRelease <= 0 || !mounted) {
+    if (pullAtRelease <= 0 || !mounted) {
       _glowPeakPull = 0.0;
       _glowFade = 1.0;
       return;
@@ -599,6 +600,10 @@ class _GalleryScreenState extends State<GalleryScreen>
           valueListenable: AppbarTuning.padding,
           builder: (context, pad, _) {
             final bar = barH + topPad;
+            // Subscribers keep the full logo channel; everyone else gets
+            // the lighter default (60 at the shipped 75) so the standard
+            // lockup doesn't crowd the board.
+            final mark = _isMax ? logo : logo * AppbarTuning.freeRatio;
             return SliverAppBarBuilder(
       barHeight: bar,
       initialBarHeight: bar,
@@ -614,10 +619,9 @@ class _GalleryScreenState extends State<GalleryScreen>
           height: contentHeight,
           child: Padding(
             padding: EdgeInsets.only(top: topPad, left: pad, right: pad),
-            // The mark (71pt, one grid cell) is taller than the 40pt
-            // row. OverflowBox lets it paint centered outside the row
-            // bounds without a layout exception, so the bar can stay
-            // short while the mark matches the stickers.
+            // The mark is taller than the 40pt row. OverflowBox lets it paint
+            // centered outside the row bounds without a layout exception,
+            // so the bar can stay short while the mark leads the board.
             child: OverflowBox(
               alignment: Alignment.topLeft,
               maxHeight: double.infinity,
@@ -628,8 +632,8 @@ class _GalleryScreenState extends State<GalleryScreen>
                 // the lockup stands alone.
                 if (!_isMax) ...[
                   SizedBox(
-                    width: logo,
-                    height: logo,
+                    width: mark,
+                    height: mark,
                     child: Image.asset(
                       'assets/logo3.png',
                       fit: BoxFit.contain,
@@ -648,9 +652,11 @@ class _GalleryScreenState extends State<GalleryScreen>
                     // stays exactly 1:1 with the wordmark at any markScale
                     // (scaling only the shape skewed the proportions).
                     // Driven by the logo channel so the lockup matches the
-                    // grid cells below it, not the bar height.
-                    imageHeight: logo * _markScale,
-                    shadowHeight: logo * _markScale,
+                    // grid cells below it, not the bar height. NOT scaled
+                    // by the placeholder's _markScale — that channel would
+                    // silently shrink the appbar mark.
+                    imageHeight: mark,
+                    shadowHeight: mark,
                     shapeIndex: _indicatorShape,
                     color: _indicatorColor,
                     shadowVisible: _shapeBgOn,
@@ -1052,8 +1058,10 @@ class _GalleryScreenState extends State<GalleryScreen>
                 final launched = flung || pulled;
                 setState(() => _footerDragDy = 0.0);
                 _footerHapticAccum = 0;
-                // No launch: the light lingers 1s, then fades over 1s.
-                _releaseGlow(pull, launched: launched);
+                // The light lingers 1s at the peak, then fades over 1s —
+                // including on launch, where the picker opening used to
+                // kill it instantly.
+                _releaseGlow(pull);
                 if (launched) {
                   AppHaptics.launch();
                   _onFabGallery();
