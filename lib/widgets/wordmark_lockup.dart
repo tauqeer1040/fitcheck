@@ -4,6 +4,32 @@ import '../motion/app_motion.dart';
 import '../services/sticker_style_service.dart';
 import 'wordmark_shadow.dart';
 
+/// Live tuning for the gallery appbar, driven by the debug card's
+/// sliders. Plain heights in pt (the status inset is added on top by
+/// the caller) — one channel shared by the bar and the lab.
+class AppbarTuning {
+  AppbarTuning._();
+
+  /// Bar content height (logo row). The mark can be taller than this —
+  /// it's painted outside the row, the bar itself stays short.
+  static final ValueNotifier<double> height =
+      ValueNotifier<double>(40.0);
+
+  /// Mark box side. Just over one grid cell (71) so the lockup reads
+  /// as a touch more prominent than the stickers below it.
+  static final ValueNotifier<double> logo = ValueNotifier<double>(75.0);
+
+  /// Horizontal side padding. Default matches the grid's gutters.
+  static final ValueNotifier<double> padding =
+      ValueNotifier<double>(12.0);
+
+  static void reset() {
+    height.value = 40.0;
+    logo.value = 75.0;
+    padding.value = 12.0;
+  }
+}
+
 /// Live tuning for the lockup's backing shape, driven by the debug
 /// card's sliders. Multipliers, so 1.0 is the shipped look and both
 /// the appbar and the placeholder stay in lockstep — there is one

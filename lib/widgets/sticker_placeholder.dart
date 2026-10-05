@@ -148,8 +148,8 @@ class _StickerPlaceholderState extends State<StickerPlaceholder> {
                 // 2x the appbar lockup, and the backing shape keeps the
                 // appbar's proportions (shadow == art size, 1:1) so the
                 // two never drift apart.
-                imageHeight: 114 * markScale,
-                shadowHeight: 114 * markScale,
+                imageHeight: 92 * markScale,
+                shadowHeight: 92 * markScale,
                 shapeIndex: indicatorShape,
                 color: indicatorColor,
                 shadowVisible: shapeBg,

@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:confetti/confetti.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sliver_app_bar_builder/sliver_app_bar_builder.dart';
 import 'package:path_provider/path_provider.dart';
@@ -27,6 +28,7 @@ import '../services/widget_service.dart';
 import '../widgets/embedded_picker_sheet.dart';
 import '../widgets/genie_flight.dart';
 import '../widgets/bounce_chevron.dart';
+import '../widgets/picker_lab_sheet.dart';
 import '../widgets/sticker_grid.dart';
 import '../widgets/wordmark_lockup.dart';
 import 'photo_preview_screen.dart';
@@ -360,6 +362,7 @@ class _GalleryScreenState extends State<GalleryScreen>
     RevenueCatService.instance
         .removeListener(_onCustomerInfoForWordmark);
     _gridController.dispose();
+    _glowTimer?.cancel();
     _confettiPop.dispose();
     super.dispose();
   }
@@ -495,16 +498,56 @@ class _GalleryScreenState extends State<GalleryScreen>
   /// curved center dome. Pinned to the screen's bottom edge (it
   /// doesn't ride the finger) — opacity saturates with the pull while
   /// the height stretches unbounded, chasing the finger.
+  ///
+  /// Release doesn't kill it: [_releaseGlow] freezes the peak pull and
+  /// holds it 1s, then fades it out over the next 1s ([_glowFade]).
+  /// A new drag or a launch clears the linger immediately.
+  Timer? _glowTimer;
+  double _glowPeakPull = 0.0;
+  double _glowFade = 1.0;
+
+  void _releaseGlow(double pullAtRelease, {required bool launched}) {
+    _glowTimer?.cancel();
+    _glowTimer = null;
+    if (launched || pullAtRelease <= 0 || !mounted) {
+      _glowPeakPull = 0.0;
+      _glowFade = 1.0;
+      return;
+    }
+    _glowPeakPull = pullAtRelease;
+    _glowFade = 1.0;
+    final start = DateTime.now();
+    _glowTimer = Timer.periodic(const Duration(milliseconds: 50), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      final el = DateTime.now().difference(start).inMilliseconds / 1000.0;
+      // Second 0→1: hold. Second 1→2: fade to zero.
+      if (el < 1.0) return;
+      final f = ((2.0 - el) / 1.0).clamp(0.0, 1.0);
+      setState(() => _glowFade = f);
+      if (f <= 0.0) {
+        t.cancel();
+        _glowTimer = null;
+        if (mounted) setState(() => _glowPeakPull = 0.0);
+      }
+    });
+  }
+
   Widget _buildFooterGlow() {
     final pull = (-_footerDragDy).clamp(0.0, double.infinity);
-    final t = (pull / 200).clamp(0.0, 1.0);
+    // Lingering peak (decaying) vs live pull — whichever is higher wins.
+    final held = _glowPeakPull * _glowFade;
+    final eff = pull > held ? pull : held;
+    final t = (eff / 200).clamp(0.0, 1.0);
     return IgnorePointer(
       child: Opacity(
         opacity: 0.55 * t,
         child: SizedBox(
           // No height limit: the light stretches from the edge up
-          // toward the finger.
-          height: 32 + pull,
+          // toward the finger (or the lingering peak while fading).
+          height: 32 + eff,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -544,11 +587,19 @@ class _GalleryScreenState extends State<GalleryScreen>
   /// Transparent floating header sliver (sliver_app_bar_builder):
   /// hides on scroll-down, regrows on reverse. Content stacks UNDER
   /// the bar (contentBelowBar), so stickers genuinely flow beneath the
-  /// transparency — no reflow, no cutoff.
+  /// transparency — no reflow, no cutoff. Bar height, logo size and
+  /// side padding all follow the debug lab's sliders live.
   Widget _buildHeaderSliver() {
     final topPad = MediaQuery.of(context).padding.top;
-    final bar = 80.0 + topPad;
-    return SliverAppBarBuilder(
+    return ValueListenableBuilder<double>(
+      valueListenable: AppbarTuning.height,
+      builder: (context, barH, _) => ValueListenableBuilder<double>(
+        valueListenable: AppbarTuning.logo,
+        builder: (context, logo, _) => ValueListenableBuilder<double>(
+          valueListenable: AppbarTuning.padding,
+          builder: (context, pad, _) {
+            final bar = barH + topPad;
+            return SliverAppBarBuilder(
       barHeight: bar,
       initialBarHeight: bar,
       initialContentHeight: bar,
@@ -562,15 +613,23 @@ class _GalleryScreenState extends State<GalleryScreen>
         return SizedBox(
           height: contentHeight,
           child: Padding(
-            padding: EdgeInsets.only(top: topPad, left: 16, right: 8),
-            child: Row(
+            padding: EdgeInsets.only(top: topPad, left: pad, right: pad),
+            // The mark (71pt, one grid cell) is taller than the 40pt
+            // row. OverflowBox lets it paint centered outside the row
+            // bounds without a layout exception, so the bar can stay
+            // short while the mark matches the stickers.
+            child: OverflowBox(
+              alignment: Alignment.topLeft,
+              maxHeight: double.infinity,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // Transparent logo, no chip behind it. Hidden for Max —
                 // the lockup stands alone.
                 if (!_isMax) ...[
                   SizedBox(
-                    width: 64,
-                    height: 64,
+                    width: logo,
+                    height: logo,
                     child: Image.asset(
                       'assets/logo3.png',
                       fit: BoxFit.contain,
@@ -588,14 +647,30 @@ class _GalleryScreenState extends State<GalleryScreen>
                     // Art and backing shape scale together, so the shadow
                     // stays exactly 1:1 with the wordmark at any markScale
                     // (scaling only the shape skewed the proportions).
-                    imageHeight: 57 * _markScale,
-                    shadowHeight: 57 * _markScale,
+                    // Driven by the logo channel so the lockup matches the
+                    // grid cells below it, not the bar height.
+                    imageHeight: logo * _markScale,
+                    shadowHeight: logo * _markScale,
                     shapeIndex: _indicatorShape,
                     color: _indicatorColor,
                     shadowVisible: _shapeBgOn,
                   ),
                 ),
                 const Spacer(),
+                // Debug Picker/Preview Lab. Debug builds only —
+                // release builds never see it.
+                if (kDebugMode)
+                  IconButton(
+                    onPressed: () => showPickerLab(
+                      context,
+                      onStickersChanged: () => _loadStickers(),
+                    ),
+                    icon: const Icon(
+                      Icons.bug_report_outlined,
+                      color: Colors.white70,
+                    ),
+                    tooltip: 'Picker Lab',
+                  ),
                 // Done exits delete mode.
                 if (_jiggling)
                   TextButton(
@@ -609,11 +684,16 @@ class _GalleryScreenState extends State<GalleryScreen>
                       ),
                     ),
                   ),
-              ],
+                ],
+              ),
             ),
           ),
         );
       },
+    );
+          },
+        ),
+      ),
     );
   }
 
@@ -942,6 +1022,13 @@ class _GalleryScreenState extends State<GalleryScreen>
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _onFabGallery,
+              onVerticalDragStart: (_) {
+                // New pull kills any lingering glow from the last one.
+                _glowTimer?.cancel();
+                _glowTimer = null;
+                _glowPeakPull = 0.0;
+                _glowFade = 1.0;
+              },
               onVerticalDragUpdate: (d) {
                 // Only upward travel; the whole strip (chevron
                 // included) rides the finger, capped at half the screen
@@ -961,9 +1048,13 @@ class _GalleryScreenState extends State<GalleryScreen>
               onVerticalDragEnd: (d) {
                 final flung = (d.primaryVelocity ?? 0) < -300;
                 final pulled = _footerDragDy < -30;
+                final pull = -_footerDragDy;
+                final launched = flung || pulled;
                 setState(() => _footerDragDy = 0.0);
                 _footerHapticAccum = 0;
-                if (flung || pulled) {
+                // No launch: the light lingers 1s, then fades over 1s.
+                _releaseGlow(pull, launched: launched);
+                if (launched) {
                   AppHaptics.launch();
                   _onFabGallery();
                 }

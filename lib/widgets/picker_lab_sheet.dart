@@ -307,6 +307,10 @@ class _PickerLabBodyState extends State<_PickerLabBody> {
           const SizedBox(height: 24),
           const Divider(color: Color(0x1FFFFFFF), height: 1),
           const SizedBox(height: 20),
+          _buildAppbarLab(),
+          const SizedBox(height: 24),
+          const Divider(color: Color(0x1FFFFFFF), height: 1),
+          const SizedBox(height: 20),
           _buildPreviewLab(context),
         ],
       ),
@@ -363,6 +367,71 @@ class _PickerLabBodyState extends State<_PickerLabBody> {
             ),
             child: const Text(
               'Reset to 1.0',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Appbar tuning
+  // ---------------------------------------------------------------------------
+
+  Widget _buildAppbarLab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Appbar',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 2),
+        const Text(
+          'Live sliders. Bar, logo and padding in pt.',
+          style: TextStyle(color: Colors.white60, fontSize: 13),
+        ),
+        const SizedBox(height: 16),
+        _LabSlider(
+          label: 'Bar height',
+          help: 'Logo row height. Status inset sits on top.',
+          value: AppbarTuning.height,
+          min: 40,
+          max: 110,
+        ),
+        _LabSlider(
+          label: 'Logo size',
+          help: 'Pants logo box side. Grid cells are 71.',
+          value: AppbarTuning.logo,
+          min: 32,
+          max: 110,
+        ),
+        _LabSlider(
+          label: 'Side padding',
+          help: 'Left/right inset. Grid gutters are 12.',
+          value: AppbarTuning.padding,
+          min: 0,
+          max: 32,
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 44,
+          child: OutlinedButton(
+            onPressed: AppbarTuning.reset,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: const Text(
+              'Reset to 40 / 75 / 12',
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),

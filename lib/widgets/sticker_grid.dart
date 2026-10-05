@@ -386,7 +386,9 @@ class _StickerGridState extends State<StickerGrid>
               slivers: [
                 widget.headerSliver,
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  // No top gap: the first row tucks right under the
+                  // transparent bar.
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
                   sliver: SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: _columns,
