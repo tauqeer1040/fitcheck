@@ -90,6 +90,10 @@ class StickerGrid extends StatefulWidget {
   /// Silhouette size relative to the art box (fixed 70%, user-tuned).
   final double shapeScale;
 
+  /// Header sliver (transparent floating appbar): painted first in
+  /// both the grid and the empty board so content flows beneath it.
+  final Widget headerSliver;
+
   static const int defaultColumns = 5;
   static const int minColumns = 3;
   static const int maxColumns = 6;
@@ -119,6 +123,7 @@ class StickerGrid extends StatefulWidget {
     this.onDelete,
     this.onExitJiggle,
     this.bottomInset = 0,
+    required this.headerSliver,
   });
 
   @override
@@ -307,16 +312,23 @@ class _StickerGridState extends State<StickerGrid>
   Widget build(BuildContext context) {
     if (widget.stickers.isEmpty) {
       // No stickers: placeholder fills the board above the footer's
-      // own inset, so the grid never ends mid-air behind it.
-      return SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(height: 8),
-            _buildEmptyState(),
-            SizedBox(height: 8 + widget.bottomInset),
-          ],
-        ),
+      // own inset, so the grid never ends mid-air behind it. Slivers
+      // (not a box scroll) so the header slot works here too.
+      return CustomScrollView(
+        controller: widget.controller,
+        slivers: [
+          widget.headerSliver,
+          SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 8),
+                _buildEmptyState(),
+                SizedBox(height: 8 + widget.bottomInset),
+              ],
+            ),
+          ),
+        ],
       );
     }
     return _buildGrid();
@@ -372,6 +384,7 @@ class _StickerGridState extends State<StickerGrid>
                   : null,
               controller: widget.controller,
               slivers: [
+                widget.headerSliver,
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
                   sliver: SliverGrid(

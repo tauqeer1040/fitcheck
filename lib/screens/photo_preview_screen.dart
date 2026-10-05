@@ -287,9 +287,18 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen>
 
       if (mounted) {
         // M3 theming engine on the source image (already seeded at
-        // open for the tint wash — reuse, don't re-analyze).
-        final style =
+        // open for the tint wash — reuse, don't re-analyze). The COLOR
+        // comes from the analysis, but the SHAPE stays the pick-time
+        // roll (initialShapeIndex): it's the silhouette the preview
+        // already showed, so the grid cell must wear the same one —
+        // analyze derives its shape from the image path (a different
+        // hash input), which is how the flick home used to swap shapes.
+        final analyzed =
             _style ?? await StickerStyleService.analyze(widget.imagePath);
+        final style = StickerStyle(
+          dominantColor: analyzed.dominantColor,
+          shapeIndex: widget.initialShapeIndex,
+        );
         // The reveal, in ONE beat under 300ms: cutout pops in and the
         // photo melt-morphs into the silhouette simultaneously — no
         // staged delays. Shimmer stops the instant it starts.

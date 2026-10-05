@@ -6,6 +6,7 @@ import 'dart:ui';
 
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
+import 'package:sliver_app_bar_builder/sliver_app_bar_builder.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -94,13 +95,13 @@ class _GalleryScreenState extends State<GalleryScreen>
   bool _jiggling = false;
 
   /// Footer swipe haptics: one light tick per 28px of upward travel.
-  static const double _footerTickStep = 28.0;
+  static const double _footerTickStep = 14.0;
   double _footerHapticAccum = 0;
 
   /// Live upward pull of the footer strip while swiping (chevron rides
-  /// it). Springs home on release unless the swipe launched.
+  /// it), capped at half the screen height. Springs home on release
+  /// unless the swipe launched.
   double _footerDragDy = 0.0;
-  static const double _footerMaxPull = 200.0;
 
   /// Solid M3 shape backdrop behind small grid stickers. Toggleable
   /// from the appbar wordmark; persisted next to stickers.json.
@@ -490,6 +491,132 @@ class _GalleryScreenState extends State<GalleryScreen>
     }
   }
 
+  /// Stretch overscroll light: end-to-end base wash plus a tight
+  /// curved center dome. Pinned to the screen's bottom edge (it
+  /// doesn't ride the finger) — opacity saturates with the pull while
+  /// the height stretches unbounded, chasing the finger.
+  Widget _buildFooterGlow() {
+    final pull = (-_footerDragDy).clamp(0.0, double.infinity);
+    final t = (pull / 200).clamp(0.0, 1.0);
+    return IgnorePointer(
+      child: Opacity(
+        opacity: 0.55 * t,
+        child: SizedBox(
+          // No height limit: the light stretches from the edge up
+          // toward the finger.
+          height: 32 + pull,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // End-to-end base wash: full-width vertical falloff.
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.35),
+                      Colors.white.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
+              ),
+              // Curved center pooling: tight dome for a dramatic arc.
+              Container(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0, 1),
+                    radius: 0.8,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.65),
+                      Colors.white.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Transparent floating header sliver (sliver_app_bar_builder):
+  /// hides on scroll-down, regrows on reverse. Content stacks UNDER
+  /// the bar (contentBelowBar), so stickers genuinely flow beneath the
+  /// transparency — no reflow, no cutoff.
+  Widget _buildHeaderSliver() {
+    final topPad = MediaQuery.of(context).padding.top;
+    final bar = 80.0 + topPad;
+    return SliverAppBarBuilder(
+      barHeight: bar,
+      initialBarHeight: bar,
+      initialContentHeight: bar,
+      floating: true,
+      backgroundColorBar: Colors.transparent,
+      backgroundColorAll: Colors.transparent,
+      contentBelowBar: false,
+      leadingActions: const [],
+      contentBuilder:
+          (context, expandRatio, contentHeight, centerPadding, overlapsContent) {
+        return SizedBox(
+          height: contentHeight,
+          child: Padding(
+            padding: EdgeInsets.only(top: topPad, left: 16, right: 8),
+            child: Row(
+              children: [
+                // Transparent logo, no chip behind it. Hidden for Max —
+                // the lockup stands alone.
+                if (!_isMax) ...[
+                  SizedBox(
+                    width: 64,
+                    height: 64,
+                    child: Image.asset(
+                      'assets/logo3.png',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                // Wordmark (Max lockup for subscribers): tap toggles the
+                // M3 cell backdrops. The shadow indicator behind it shows
+                // state — cycling shape each tap.
+                GestureDetector(
+                  onTap: _toggleShapeBg,
+                  child: WordmarkLockup(
+                    isMax: _isMax,
+                    // Art and backing shape scale together, so the shadow
+                    // stays exactly 1:1 with the wordmark at any markScale
+                    // (scaling only the shape skewed the proportions).
+                    imageHeight: 57 * _markScale,
+                    shadowHeight: 57 * _markScale,
+                    shapeIndex: _indicatorShape,
+                    color: _indicatorColor,
+                    shadowVisible: _shapeBgOn,
+                  ),
+                ),
+                const Spacer(),
+                // Done exits delete mode.
+                if (_jiggling)
+                  TextButton(
+                    onPressed: _exitJiggle,
+                    child: const Text(
+                      'Done',
+                      style: TextStyle(
+                        color: NotesColors.yellow,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 17,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _toggleShapeBg() {
     AppHaptics.tap();
     setState(() {
@@ -738,63 +865,6 @@ class _GalleryScreenState extends State<GalleryScreen>
       },
       child: Scaffold(
       backgroundColor: NotesColors.bg,
-      appBar: AppBar(
-        backgroundColor: NotesColors.bg,
-        foregroundColor: NotesColors.text,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: false,
-        // Taller bar so the 2x logo (64px) and 2x wordmark fit cleanly.
-        toolbarHeight: 80,
-        title: Row(
-          children: [
-            // Transparent logo, no chip behind it. Hidden for Max —
-            // the lockup stands alone.
-            if (!_isMax) ...[
-              SizedBox(
-                width: 64,
-                height: 64,
-                child: Image.asset(
-                  'assets/logo3.png',
-                  fit: BoxFit.contain,
-                ),
-              ),
-              const SizedBox(width: 12),
-            ],
-            // Wordmark (Max lockup for subscribers): tap toggles the
-            // M3 cell backdrops. The shadow indicator behind it shows
-            // state — cycling shape each tap.
-            GestureDetector(
-              onTap: _toggleShapeBg,
-              child: WordmarkLockup(
-                isMax: _isMax,
-                // Art and backing shape scale together, so the shadow
-                // stays exactly 1:1 with the wordmark at any markScale
-                // (scaling only the shape skewed the proportions).
-                imageHeight: 57 * _markScale,
-                shadowHeight: 57 * _markScale,
-                shapeIndex: _indicatorShape,
-                color: _indicatorColor,
-                shadowVisible: _shapeBgOn,
-              ),
-            ),
-          ],
-        ),        actions: [
-          // Done exits delete mode.
-          if (_jiggling)
-            TextButton(
-              onPressed: _exitJiggle,
-              child: const Text(
-                'Done',
-                style: TextStyle(
-                  color: NotesColors.yellow,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 17,
-                ),
-              ),
-            ),
-        ],
-      ),
       body: Stack(
         key: _bodyKey,
         children: [
@@ -805,10 +875,14 @@ class _GalleryScreenState extends State<GalleryScreen>
               behavior: HitTestBehavior.translucent,
               onTap: _dismissSheet,
               onPanDown: (_) => _dismissSheet(),
+              // Overlay header below floats over this full-bleed grid:
+              // hiding it never re-lays-out the stickers, so nothing
+              // can cut. Scroll direction drives it (see _onGridScroll).
               child: StickerGrid(
+                controller: _gridController,
+                headerSliver: _buildHeaderSliver(),
                 stickers: _stickers,
                 onTap: _openDetail,
-                controller: _gridController,
                 shapeBg: _shapeBgOn,
                 indicatorShape: _indicatorShape,
                 onToggleShapeBg: _toggleShapeBg,
@@ -840,7 +914,7 @@ class _GalleryScreenState extends State<GalleryScreen>
                 onLanded: () {
                   if (mounted) setState(() => _justAddedId = null);
                 },
-                bottomInset: MediaQuery.of(context).padding.bottom + 72,
+                bottomInset: MediaQuery.of(context).padding.bottom + 88,
               ),
             ),
           ),
@@ -851,6 +925,16 @@ class _GalleryScreenState extends State<GalleryScreen>
           // the whole swipe/tap gesture. Drag the chevron up or tap it
           // (or the strip) to open the gallery picker; dragging the
           // strip itself past threshold does the same.
+          // Stretch overscroll light: end-to-end base wash plus the
+          // original curved center pooling. Pinned to the bottom edge
+          // (it doesn't ride the finger) — opacity and height follow
+          // the drag fraction, so it swells and fades with the pull.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _buildFooterGlow(),
+          ),
           Positioned(
             left: 0,
             right: 0,
@@ -860,10 +944,12 @@ class _GalleryScreenState extends State<GalleryScreen>
               onTap: _onFabGallery,
               onVerticalDragUpdate: (d) {
                 // Only upward travel; the whole strip (chevron
-                // included) rides the finger.
+                // included) rides the finger, capped at half the screen
+                // height.
                 setState(() {
-                  _footerDragDy = (_footerDragDy + d.delta.dy)
-                      .clamp(-_footerMaxPull, 0.0);
+                  final cap = MediaQuery.of(context).size.height * 0.5;
+                  _footerDragDy =
+                      (_footerDragDy + d.delta.dy).clamp(-cap, 0.0);
                 });
                 if (d.delta.dy < 0) _footerHapticAccum -= d.delta.dy;
                 while (_footerHapticAccum >= _footerTickStep) {
@@ -874,7 +960,7 @@ class _GalleryScreenState extends State<GalleryScreen>
               },
               onVerticalDragEnd: (d) {
                 final flung = (d.primaryVelocity ?? 0) < -300;
-                final pulled = _footerDragDy < -60;
+                final pulled = _footerDragDy < -30;
                 setState(() => _footerDragDy = 0.0);
                 _footerHapticAccum = 0;
                 if (flung || pulled) {
@@ -887,10 +973,11 @@ class _GalleryScreenState extends State<GalleryScreen>
                 child: Container(
                   // Transparent: the board reads continuous to the
                   // screen edge, and only the chevron marks the footer.
+                  // Tall grab area for the unbounded pull.
                   color: Colors.transparent,
                   padding: EdgeInsets.only(
                     bottom: MediaQuery.of(context).padding.bottom,
-                    top: 32,
+                    top: 48,
                   ),
                   child: Center(
                     child: BounceChevron(
