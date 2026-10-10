@@ -125,6 +125,28 @@ class _StickerPlaceholderState extends State<StickerPlaceholder> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // The rotating line leads the block, above the logo: it is
+            // the prompt ("Pick your photo to add"), and the wordmark
+            // below it reads as the answer.
+            //
+            // The only way this line ever changes: an explicit tap,
+            // once a day. Swallow it so the block's own tap (picker)
+            // doesn't also fire.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _rollLine,
+              child: Text(
+                line,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey.shade600,
+                ),
+              ).animate().fadeIn(
+                    duration: AppMotion.standard,
+                    curve: AppMotion.appleEase,
+                  ),
+            ),
+            const SizedBox(height: 14),
             // Max lockup stands alone — no logo above it.
             if (!isMax) ...[
               Image.asset(
@@ -154,24 +176,6 @@ class _StickerPlaceholderState extends State<StickerPlaceholder> {
                 color: indicatorColor,
                 shadowVisible: shapeBg,
               ),
-            ),
-            const SizedBox(height: 8),
-            // The only way this line ever changes: an explicit tap,
-            // once a day. Swallow it so the block's own tap (picker)
-            // doesn't also fire.
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _rollLine,
-              child: Text(
-                line,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
-              ).animate().fadeIn(
-                    duration: AppMotion.standard,
-                    curve: AppMotion.appleEase,
-                  ),
             ),
             // Get Max pill: small white upsell where the arrow pointed.
             // Hidden for Max members (nothing to sell them).

@@ -72,15 +72,38 @@ const int kFallbackStickerColor = 0xFF606060;
 
 /// Free-tier shape cap: 15 of the M3 silhouettes. Max members wear the
 /// whole set; everyone else draws from the first 15 — new stickers,
-/// thumbs, and reveals alike. Stored stickers keep whatever they have.
+/// thumbs, and reveals alike.
+///
+/// A stored shape is never rewritten, so [shapeIndexForTier] is what
+/// re-applies this cap every time a shape is *rendered*: without it a
+/// silhouette picked while Max keeps rendering after a downgrade.
 const int kFreeShapeCount = 15;
 
-/// Deterministic shape for stickers without a stored style.
-int fallbackShapeIndex(String id) {
-  final i = id.hashCode.abs() % kStyleShapes.length;
-  if (RevenueCatService.instance.isPro) return i;
-  return i % kFreeShapeCount;
+/// How many shapes this account may render. [isMax] overrides the live
+/// entitlement — it exists so the tier split is testable without
+/// standing up RevenueCat.
+int shapeCountForTier({bool? isMax}) =>
+    _isMaxShapeTier(isMax) ? kStyleShapes.length : kFreeShapeCount;
+
+/// Whether shapes are ungated. Reads [RevenueCatService.isProSticky]
+/// (live *or* last known) so a silhouette never snaps back to the free
+/// set on a cold start before entitlements resolve.
+bool _isMaxShapeTier(bool? override) =>
+    override ?? RevenueCatService.instance.isProSticky;
+
+/// Clamp any shape index — stored, restored or hashed — to what this
+/// tier may actually render. Both the grid and the widget go through
+/// this, so the cell and its silhouette can never disagree.
+///
+/// Wraps rather than truncates: an index past the cap rolls into the
+/// free set instead of piling up on the last shape.
+int shapeIndexForTier(int index, {bool? isMax}) {
+  final i = index % kStyleShapes.length;
+  return _isMaxShapeTier(isMax) ? i : i % kFreeShapeCount;
 }
+
+/// Deterministic shape for stickers without a stored style.
+int fallbackShapeIndex(String id) => shapeIndexForTier(id.hashCode.abs());
 
 class StickerStyleService {
   StickerStyleService._();

@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:dismissible_page/dismissible_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../models/outfit_sticker.dart';
 import '../motion/app_haptics.dart';
@@ -273,10 +272,15 @@ class _StickerDetailScreenState extends State<StickerDetailScreen>
               Row(
                 children: [
                   _GlassAction(
-                    icon: const FaIcon(
-                      FontAwesomeIcons.whatsapp,
+                    // Single glyph extracted from the Font Awesome Brands
+                    // font (see tools/extract_whatsapp_glyph.py) instead of
+                    // depending on font_awesome_flutter for one 20dp icon.
+                    icon: Image.asset(
+                      'assets/whatsapp_glyph.png',
                       color: Colors.white,
-                      size: 20,
+                      width: 20,
+                      height: 20,
+                      filterQuality: FilterQuality.high,
                     ),
                     tooltip: 'Add to WhatsApp stickers',
                     onTap: () => _addToWhatsAppPack(context),

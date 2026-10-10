@@ -10,13 +10,30 @@ import '../services/photo_pick_service.dart';
 import 'embedded_picker_sheet.dart';
 import 'wordmark_lockup.dart';
 
+/// Whether the debug tools (Picker Lab, "Test onboarding") are live.
+///
+/// On in debug builds, and in a release build launched with
+/// `--dart-define=SP_DEBUG_TOOLS=true` — which is how the lab gets
+/// driven on a release-signed APK without ever shipping it to users:
+///
+/// ```sh
+/// flutter build apk --release --dart-define=SP_DEBUG_TOOLS=true
+/// ```
+///
+/// Deliberately separate from [kDebugMode]: that one also opens up
+/// logging and PayStore verbosity, which has no business being on in
+/// a build you ship. A `--dart-define` is opt-in per build, so a
+/// release assembled the normal way stays clean.
+const bool kDebugTools =
+    kDebugMode || bool.fromEnvironment('SP_DEBUG_TOOLS');
+
 /// Debug-only Picker Lab: A/B the two gallery implementations.
 ///
 /// * System — classic fullscreen picker (image_picker). Ships to prod.
 /// * Native — embedded system grid, one tap, no Done (Android 14+).
 ///
 /// Debug builds only: the gallery AppBar bug icon opens this. Never
-/// referenced from release UI.
+/// referenced from release UI unless [kDebugTools] was forced on.
 ///
 /// [onStickersChanged] fires after the test onboarding flow pops, so
 /// the grid reloads stickers filed while the replay was up (the grid
@@ -28,8 +45,8 @@ Future<void> showPickerLab(
   VoidCallback? onStickersChanged,
 }) {
   assert(() {
-    if (!kDebugMode) {
-      throw StateError('Picker Lab is debug-only.');
+    if (!kDebugTools) {
+      throw StateError('Picker Lab needs kDebugTools.');
     }
     return true;
   }());
@@ -184,6 +201,75 @@ class _PickerLabBodyState extends State<_PickerLabBody> {
               icon: const Icon(Icons.rocket_launch_outlined, size: 18),
               label: const Text(
                 'Test onboarding',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.35),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // The two reveal pages, jumped to directly. debugStartAt
+          // lands on the page with its step kept, and 'aura' seeds a
+          // real cutout from the newest sticker — so these two open
+          // straight onto the screens without replaying the ten
+          // questions in front of them.
+          SizedBox(
+            height: 48,
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const OnboardingFlow(
+                      debugPreview: true,
+                      debugStartAt: 'aura',
+                    ),
+                  ),
+                );
+                widget.onStickersChanged?.call();
+              },
+              icon: const Icon(Icons.auto_awesome, size: 18),
+              label: const Text(
+                'Aura reveal',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.35),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 48,
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const OnboardingFlow(
+                      debugPreview: true,
+                      debugStartAt: 'sauce',
+                    ),
+                  ),
+                );
+                widget.onStickersChanged?.call();
+              },
+              icon: const Icon(Icons.icecream_outlined, size: 18),
+              label: const Text(
+                'Sauce page',
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               style: OutlinedButton.styleFrom(

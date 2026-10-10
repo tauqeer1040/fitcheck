@@ -7,15 +7,36 @@ AAB_PATH = File.join(REPO_ROOT, "build/app/outputs/bundle/release/app-release.aa
 METADATA_PATH = File.join(REPO_ROOT, "android/fastlane/metadata/android")
 JSON_KEY = File.join(REPO_ROOT, "android/fbm/stickerpants-play.json")
 
+# Release build flags for the Play upload.
+#   --obfuscate          shortens Dart identifiers in libapp.so
+#   --split-debug-info   strips DWARF out of the shipped .so files
+# Both shrink what Play serves, and neither costs you symbolication: AGP
+# packages the symbol data into the .aab itself, so nothing needs uploading
+# separately (see the note below).
+SYMBOLS_PATH = File.join(REPO_ROOT, "build/app/outputs/symbols")
+RELEASE_BUILD = "flutter build appbundle --release --obfuscate " \
+                "--split-debug-info=#{SYMBOLS_PATH}"
+
+# No separate deobfuscation upload is needed. AGP packages both symbol kinds
+# into the .aab and Play ingests them on upload:
+#   BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map    (R8/Java)
+#   BUNDLE-METADATA/com.android.tools.build.debugsymbols/<abi>/*.so.sym (native ELF)
+# Keep the build/app/outputs/symbols copy anyway as a local backup.
+#
+# (Verified for this app: all seven shipped arm64 .so files carry zero debug
+# sections, so the DWARF --split-debug-info strips is not what users download.)
+
 platform :android do
   desc "Upload store listing metadata (text + graphics) to the Play Console internal draft"
   lane :metadata do
     supply(
       track: "internal",
       release_status: "draft",
-      # Internal holds multiple releases (vc2 + vc3 draft); pin the draft.
-      # Bump alongside pubspec.yaml's build number.
-      version_code: 4,
+      # Internal holds multiple releases (vc2 + vc3 draft); supply requires a
+      # :version_code to disambiguate, and it must name a release that actually
+      # exists on the track or the upload aborts. vc3 is the newest draft.
+      # This is NOT pubspec's buildNumber (9) — that release is not on internal.
+      version_code: 3,
       metadata_path: METADATA_PATH,
       json_key: JSON_KEY,
       skip_upload_aab: true,
@@ -44,12 +65,13 @@ platform :android do
   lane :prod do
     # Version comes from pubspec.yaml (versionName+buildNumber); bump the
     # build number before running — Play rejects a reused versionCode.
-    # NOTE: while the app itself is still an unpublished draft, Play
-    # rejects release_status "completed" ("Only releases with status draft
-    # may be created on draft app"). For the first production release,
-    # upload with release_status "draft" instead (see run below), then
-    # send to review from the Console; "completed" works after that.
-    sh("cd #{REPO_ROOT} && flutter build appbundle --release")
+    # Symbols need NO separate upload: AGP bundles both into the .aab and Play
+    # ingests them on upload --
+    #   BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map   (R8/Java)
+    #   BUNDLE-METADATA/com.android.tools.build.debugsymbols/<abi>/*.so.sym (native ELF)
+    # So crash traces stay readable while the shipped .so files stay stripped
+    # (--split-debug-info removes DWARF from what users actually download).
+    sh("cd #{REPO_ROOT} && #{RELEASE_BUILD}")
     supply(
       aab: AAB_PATH,
       track: "production",
@@ -67,7 +89,7 @@ platform :android do
   desc "Build the release AAB and ship it to the Play production track as a staged rollout (default 20%)"
   lane :prod_staged do |options|
     user_fraction = (options[:fraction] || 0.2).to_f
-    sh("cd #{REPO_ROOT} && flutter build appbundle --release")
+    sh("cd #{REPO_ROOT} && #{RELEASE_BUILD}")
     supply(
       aab: AAB_PATH,
       track: "production",

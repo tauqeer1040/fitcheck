@@ -1,1 +1,1 @@
-StickerPants: Wardrobe Tracker
+StickerPants: Outfit Tracker

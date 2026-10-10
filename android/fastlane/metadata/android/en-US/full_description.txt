@@ -1,26 +1,48 @@
-Track your outfits, get roasted, and share your stickers. StickerPants is the wardrobe tracker that turns your fits into WhatsApp stickers — with a playful roast on every look.
+StickerPants is the outfit tracker that turns your fits into WhatsApp stickers — with a playful roast on every look. Log what you wear, when you wore it, and get on with your day.
 
-TRACK YOUR OUTFITS
-• Log every fit you wear and see your whole wardrobe at a glance
-• Plan outfits in advance and stop staring at a full closet with nothing to wear
-• Your dated sticker log shows what you actually wear — rewear favorites with pride
-• Rotate pieces with intention and get more out of the clothes you already own
+CUTOUTS BUILT FOR CLOTHES, NOT JUST PEOPLE
+• Three segmentation engines run on your phone — the person model goes first, then a garment-aware model takes over
+• Hair, skin, clothes and accessories are recognised separately, so a jacket on a hanger or jeans folded on a bed cuts out clean
+• Cut out a whole outfit or a single piece — not just full-body shots
+• Automatic fallback if an engine can't read the photo, so you still get a cutout
+• Everything runs on-device, so your pictures are never uploaded anywhere
 
-GET ROASTED (PLAYFULLY)
-• Every sticker earns a witty one-liner about the outfit, CarrotWeather-style
+LOG YOUR OUTFITS THE EASY WAY
+• Snap a photo and log the fit in seconds — just log outfits with a photo, like you always meant to
+• Every sticker is stamped with its date, so you always know when you wore it
+• Scroll back through your outfit history and see what you actually reach for
+• Answer "what should I wear?" by checking what already worked
+
+YOUR OUTFIT CALENDAR AT A GLANCE
+• Build a digital closet log that records what you actually wear, not just what you own
+• A dated timeline of every fit you've logged, ready to scroll back through
+• Rewear your favorites with pride — the repeats are the point
+• Get more wear out of the clothes you already have instead of buying more
+• Your wardrobe log stays private and on your phone
+
+GET ROASTED (CARROT WEATHER STYLE)
+• Every sticker earns a witty one-liner about the fit, in the spirit of Carrot Weather's forecasts
 • The roast is always about the fit, never about you — no body talk, ever
 • Tap refresh for a new line, and keep the ones worth framing
 
 SHARE YOUR STICKERS
-• On-device AI cutout turns outfit photos into clean WhatsApp stickers in seconds
-• Square silhouettes and shapes that look right in chat
+• Turn your cutout into a WhatsApp sticker with square silhouettes and expressive shapes
+• Shapes and colours that look right in a chat window
 • Save sticker packs and send your fits straight to WhatsApp
-• Homescreen widgets show your latest stickers
+
+YOUR FIT, ON YOUR HOME SCREEN
+• Two homescreen widgets: your latest sticker, or a grid of your recent looks
+• Widgets rotate themselves every few hours, so your fits keep changing all day
+• Each sticker keeps its own shape and colour, so the widget matches your gallery
+
+STYLE IT YOUR WAY
+• Your own style, on your terms — no feed, no likes, no outfit ranking
+• A private outfit history that works without an account
 
 PRIVATE BY DESIGN
-Your photos never leave your device for cutouts. No account, no feed — just you and your wardrobe.
+Your photos never leave your device for cutouts. No account, no feed, no cloud — just you and your wardrobe.
 
 STICKERPANTS PRO (OPTIONAL)
 Tracking and stickers are free to start. StickerPants Pro unlocks unlimited everything for power users, with a free trial where available. See the paywall in the app for current plans and pricing.
 
-Download StickerPants — track your outfits, get roasted, and share your stickers.
+Download StickerPants — the outfit tracker with background removal, a dated outfit log, and a shareable sticker for every fit.

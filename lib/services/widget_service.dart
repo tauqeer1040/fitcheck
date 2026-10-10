@@ -16,15 +16,16 @@ import 'whatsapp_sticker_service.dart';
 /// over a silhouette that spins on a flip-book.
 ///
 /// **The clock is native, not Dart.** Dart publishes a *pool* — every
-/// sticker, newest first, with two caption variants each — plus an
-/// epoch; `WidgetRotation.kt` picks the slot from the wall clock on
-/// every tick, so the widgets turn over with or without the app
+/// sticker, newest first, with every roast line this tier can serve —
+/// plus an epoch; `WidgetRotation.kt` picks the slot from the wall clock
+/// on every tick, so the widgets turn over with or without the app
 /// running:
 ///
 /// - image advances every 4h, so a fresh save lands the new sticker
 ///   immediately and holds it for four hours,
-/// - caption advances every 2h (two variants per sticker), always the
-///   roast of the sticker currently on screen,
+/// - caption advances every 2h, always a roast of the sticker
+///   currently on screen, walking the whole line pool so nothing
+///   repeats until it has cycled through,
 /// - the epoch is re-stamped only when the pool itself changes, so a
 ///   wordmark colour toggle never reshuffles the rotation.
 ///
@@ -40,9 +41,18 @@ class WidgetService {
   /// Key of the pool blob. Native reads the same key.
   static const poolKey = 'widget_pool';
 
-  /// Caption variants per pool entry: two, so the line turns over
-  /// twice per 4h image slot. Text is composed here, never in Kotlin.
-  static const int captionVariants = 2;
+  /// Caption variants per pool entry: one per line this tier can
+  /// serve, so the widget works through the entire library.
+  ///
+  /// The caption turns over every 2h while an image slot holds 4h, so a
+  /// sticker shows two different lines per slot and comes back to the
+  /// next two on its next turn — no line repeats until the whole pool
+  /// has cycled. Shipping the full pool per sticker is what lets the
+  /// rotation advance with the app closed; native just indexes this
+  /// list (floorMod over the blob's `variants`). Text is composed here,
+  /// never in Kotlin.
+  static int captionVariants({required bool isMax}) =>
+      RoastService.poolSize(isMax: isMax);
 
   /// Publishes the rotation pool for every sticker and refreshes both
   /// providers.
@@ -80,13 +90,14 @@ class WidgetService {
       final signature = '$isMax:${stickers.map((s) => s.id).join('|')}';
       final published = await publishedSignature();
       if (published == signature) return;
+      final variants = captionVariants(isMax: isMax);
       await HomeWidget.saveWidgetData(
         poolKey,
         jsonEncode({
           'v': 1,
           'sig': signature,
           'epochMs': DateTime.now().millisecondsSinceEpoch,
-          'variants': captionVariants,
+          'variants': variants,
           'cells': [
             for (final OutfitSticker s in stickers)
               {
@@ -96,10 +107,12 @@ class WidgetService {
                 // (kStyleShapes): native resolves it to the matching
                 // silhouette so the widget mirrors the grid cell.
                 // -1 = legacy hash fallback.
-                's': s.shapeIndex ?? fallbackShapeIndex(s.id),
+                's': shapeIndexForTier(
+                  s.shapeIndex ?? fallbackShapeIndex(s.id),
+                ),
                 't': [
-                  for (int v = 0; v < captionVariants; v++)
-                    captionForId(s.id, variant: v, isMax: isMax),
+                  for (int v = 0; v < variants; v++)
+                    widgetCaptionForId(s.id, variant: v, isMax: isMax),
                 ],
               },
           ],
@@ -125,23 +138,26 @@ class WidgetService {
     }
   }
 
-  /// The [variant]th caption (0 or 1) for the sticker with [id] —
-  /// variant 0 holds the 4h slot's first 2h, variant 1 its second.
+  /// The [variant]th widget caption for the sticker with [id] — one
+  /// line per library entry, so the widget cycles through all of them.
   ///
-  /// Both lines are fixed at push time (that is the whole point: the
-  /// caption turns over with the app closed), so variant 1 is nudged
-  /// past variant 0 — the roast pick is a hash, and a collision would
-  /// otherwise put the same line on screen twice in a row.
-  static String captionForId(
+  /// Starts at a per-sticker offset taken from the id hash (stable
+  /// across opens, and different stickers start on different lines) and
+  /// then walks the pool sequentially, which guarantees variant v and
+  /// v+1 never repeat until the whole pool has cycled through.
+  ///
+  /// Deliberately not [RoastService.roastForId]'s salted XOR: two
+  /// different salts land on the same line modulo the pool size often
+  /// enough to put the same caption on screen twice in a row, which is
+  /// exactly the repetition this replaced.
+  static String widgetCaptionForId(
     String id, {
     required int variant,
     required bool isMax,
   }) {
-    final first = RoastService.roastForId(id, salt: 0, isMax: isMax);
-    if (variant <= 0) return first;
-    final second = RoastService.roastForId(id, salt: 7, isMax: isMax);
-    if (second != first) return second;
-    return RoastService.roastForId(id, salt: 13, isMax: isMax);
+    final total = RoastService.poolSize(isMax: isMax);
+    final base = id.hashCode.abs() % total;
+    return RoastService.lineAt(base + variant, isMax: isMax);
   }
 
   /// Caption text size, which both widgets honor. Saved as a string:

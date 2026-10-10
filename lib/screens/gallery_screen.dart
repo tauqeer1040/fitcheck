@@ -5,7 +5,6 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:confetti/confetti.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sliver_app_bar_builder/sliver_app_bar_builder.dart';
 import 'package:path_provider/path_provider.dart';
@@ -69,7 +68,17 @@ class GalleryPickData {
 class GalleryScreen extends StatefulWidget {
   final void Function()? onReady;
 
-  const GalleryScreen({super.key, this.onReady});
+  /// Open straight into delete mode. Set on the first grid a new user
+  /// sees: the 15 seeded stickers are the app's uninvited defaults, and
+  /// landing them in jiggle mode says so far better than a toast
+  /// telling people to long-press. Their options are Done or delete.
+  final bool startJiggling;
+
+  const GalleryScreen({
+    super.key,
+    this.onReady,
+    this.startJiggling = false,
+  });
 
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
@@ -161,59 +170,6 @@ class _GalleryScreenState extends State<GalleryScreen>
     if (!_jiggling) return;
     AppHaptics.mode();
     setState(() => _jiggling = false);
-  }
-
-  /// First-grid-view tip, once ever: long-press deletes. Styled exactly
-  /// like the 'Sticker removed' toast. Debug builds replay it from the
-  /// appbar touch icon.
-  static const _longTapTipKey = 'longtap_tip_shown_v1';
-
-  Future<void> _maybeLongTapTip() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(_longTapTipKey) ?? false) return;
-      await prefs.setBool(_longTapTipKey, true);
-    } catch (_) {}
-    if (!mounted) return;
-    // Let the grid settle a beat so the tip lands on stickers, not a
-    // spinner.
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
-    _showLongTapTip();
-  }
-
-  void _showLongTapTip() {
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        // Transparent shell: the frosted content below is the toast.
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        padding: EdgeInsets.zero,
-        duration: const Duration(seconds: 4),
-        content: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              color: const Color(0xFF3A3A3C).withValues(alpha: 0.72),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-              child: const Text(
-                'Long-press a sticker to remove it.',
-                style: TextStyle(color: Colors.white, fontSize: 14),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   /// Deletes [sticker]: removes it now, parks its PNG in a temp trash file,
@@ -380,7 +336,6 @@ class _GalleryScreenState extends State<GalleryScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onReady?.call();
-      unawaited(_maybeLongTapTip());
     });
   }
 
@@ -454,7 +409,7 @@ class _GalleryScreenState extends State<GalleryScreen>
     try {
       final prefs = await SharedPreferences.getInstance();
       final idx = prefs.getInt('indicator_shape_index');
-      if (idx != null) _indicatorShape = idx % kStyleShapes.length;
+      if (idx != null) _indicatorShape = shapeIndexForTier(idx);
       final cidx = prefs.getInt('indicator_color_index');
       if (cidx != null) _indicatorColorIndex = cidx;
       final mark = prefs.getDouble('wordmark_shadow_scale');
@@ -663,9 +618,10 @@ class _GalleryScreenState extends State<GalleryScreen>
                   ),
                 ),
                 const Spacer(),
-                // Debug Picker/Preview Lab. Debug builds only —
-                // release builds never see it.
-                if (kDebugMode)
+                // Debug Picker/Preview Lab. Debug builds, plus any
+                // release built with --dart-define=SP_DEBUG_TOOLS=true.
+                // A normally-assembled release never sees it.
+                if (kDebugTools)
                   IconButton(
                     onPressed: () => showPickerLab(
                       context,
@@ -710,7 +666,7 @@ class _GalleryScreenState extends State<GalleryScreen>
       // silhouette is always moving — otherwise the visible-on taps
       // looked like a color-only change.
       _shapeBgOn = !_shapeBgOn;
-      _indicatorShape = (_indicatorShape + 1) % kStyleShapes.length;
+      _indicatorShape = (_indicatorShape + 1) % shapeCountForTier();
       _indicatorColorIndex++;
     });
     _persistShapeBg();
@@ -782,6 +738,10 @@ class _GalleryScreenState extends State<GalleryScreen>
       final json = await metaFile.readAsString();
       final list = (jsonDecode(json) as List).cast<Map<String, dynamic>>();
       setState(() => _stickers = list.map(OutfitSticker.fromJson).toList());
+      // Only once the stickers exist — _enterJiggle is a no-op on an
+      // empty board, so asking before the load lands would drop the
+      // request on the floor.
+      if (widget.startJiggling) _enterJiggle();
     }
   }
 

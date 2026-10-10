@@ -22,12 +22,32 @@ android {
         keystoreProps.load(FileInputStream(keystorePropsFile))
     }
 
+    // Declared at the android{} level rather than inside release{}, so
+    // profile{} can resolve it too -- Gradle gives no guarantee about
+    // the order buildTypes{} are evaluated in.
+    if (keystorePropsFile.exists()) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystoreProps["storeFile"] as String)
+                storePassword = keystoreProps["storePassword"] as String
+                keyAlias = keystoreProps["keyAlias"] as String
+                keyPassword = keystoreProps["keyPassword"] as String
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
         // Required by flutter_local_notifications: java.time & friends on
         // API < 26 run through the desugar ladder.
         isCoreLibraryDesugaringEnabled = true
+    }
+
+    // Declared at the android{} level, not inside release{}, so both
+    // release and profile can resolve it — Gradle does not guarantee
+    // buildTypes{} evaluation order.
+    if (keystorePropsFile.exists()) {
     }
 
     defaultConfig {
@@ -65,18 +85,31 @@ android {
                 "proguard-rules.pro",
             )
             if (keystorePropsFile.exists()) {
-                signingConfigs {
-                    create("release") {
-                        storeFile = file(keystoreProps["storeFile"] as String)
-                        storePassword = keystoreProps["storePassword"] as String
-                        keyAlias = keystoreProps["keyAlias"] as String
-                        keyPassword = keystoreProps["keyPassword"] as String
-                    }
-                }
                 signingConfig = signingConfigs.getByName("release")
             } else {
                 // Local dev only: debug keys so `flutter run --release` works.
                 signingConfig = signingConfigs.getByName("debug")
+            }
+        }
+
+        // The hot-reload build. `flutter run --release` cannot hot
+        // reload at all -- release is AOT, so there is no VM to push
+        // code into, which turns every UI tweak into a ~90s rebuild.
+        //
+        // Profile keeps the VM, so `r` lands in about a second, but
+        // Flutter signs it with the debug keystore by default -- and
+        // `adb install -r` over the installed release build then fails
+        // on a signature mismatch, with "uninstall first" destroying
+        // the sticker data.
+        //
+        // Signing profile with the release key fixes both: same
+        // signature, so it upgrades in place and keeps app data, and
+        // the VM is still there to hot reload into.
+        getByName("profile") {
+            signingConfig = if (keystorePropsFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
         }
     }

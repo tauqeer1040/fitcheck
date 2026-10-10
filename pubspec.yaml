@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.5+6
+version: 1.0.6+10
 
 environment:
   sdk: ^3.12.0
@@ -30,12 +30,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
   google_mlkit_selfie_segmentation: ^0.12.1
   path_provider: ^2.1.5
   uuid: ^4.5.1
   image_picker: ^1.1.2
-  loading_indicator_m3e: ^0.1.1
   flutter_animate: ^4.5.2
   confetti: ^0.8.0
   flutter_confetti: ^0.5.1
@@ -59,9 +57,6 @@ dependencies:
   material_new_shapes: ^1.0.0
   sliver_app_bar_builder: ^1.1.1
   flutter_image_compress: ^2.5.1
-  animations: ^3.0.0
-  font_awesome_flutter: ^11.0.0
-  m3e_buttons: ^0.0.6
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -95,6 +90,16 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Display face for the onboarding reveal words (AURAAA / SAUCEEE).
+  # Ships Regular + Italic only: there is no bold, so don't request a
+  # weight on it -- Flutter would synthesise one and bloat the strokes.
+  fonts:
+    - family: Better Faster
+      fonts:
+        - asset: assets/fonts/Better Faster.otf
+        - asset: assets/fonts/Better Faster Italic.otf
+          style: italic
+
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/splash/
@@ -102,6 +107,7 @@ flutter:
     - assets/stickerpants.webp
     - assets/stickerpantsmax.webp
     - assets/arrow2.webp
+    - assets/whatsapp_glyph.png
     - assets/models/
     - assets/onboarding/
   # assets:

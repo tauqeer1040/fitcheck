@@ -27,6 +27,16 @@ class LatestStickerWidgetProvider : HomeWidgetProvider() {
     private val framePx = 192
     private val artPx = 768
 
+    /**
+     * Render-format tag, mixed into the [WidgetRotation] cache key.
+     * Bump it whenever contentScale, framePx, frameCount or the glow
+     * changes: the signature deliberately tracks only *content* (paths,
+     * colors, caption, size), so without a version in the key a change
+     * to how the silhouette is drawn ships new code that never repaints
+     * an already-placed widget -- it just keeps serving cached frames.
+     */
+    private val RENDER_FORMAT = "v2"
+
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
@@ -51,7 +61,7 @@ class LatestStickerWidgetProvider : HomeWidgetProvider() {
                     "${opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 0)}" +
                         "x${opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)}"
                 val sig = WidgetRotation.signature(frame, funnySp, sizeTag)
-                val renderKey = "latest-$widgetId"
+                val renderKey = "latest-$RENDER_FORMAT-$widgetId"
                 // Same 30-minute tick as the 2x5: most land on the frame
                 // already up, and 60 silhouette bitmaps is not a cheap
                 // thing to re-ship.
@@ -75,15 +85,33 @@ class LatestStickerWidgetProvider : HomeWidgetProvider() {
                     setOnClickPendingIntent(R.id.widget_container, launch)
 
                     if (art != null) {
-                        // contentScale 1.0: the silhouette fills the
-                        // widget box exactly as the grid cell does (the
-                        // gallery passes shapeScale 1.0 to
-                        // ShapedSticker), so the homescreen matches the
-                        // in-app proportions instead of floating at 70%
-                        // of the cutout.
+                        // contentScale 0.7071 = 1/sqrt(2): the exact
+                        // no-clipping ceiling for renderSilhouette.
+                        //
+                        // The shape is drawn into a SQUARE bitmap and
+                        // spun, and rotating by theta grows its bounding
+                        // box by |cos| + |sin| -- peaking at sqrt(2) on
+                        // the diagonals. At scale 1.0 the bitmap edge
+                        // therefore slices the corners off every angled
+                        // frame (the original bug).
+                        //
+                        // widget_spin_frame is fitCenter, so the square
+                        // bitmap maps onto the cell's SHORT side: apparent
+                        // size == contentScale * cellHeight, and no higher
+                        // value can render unclipped. 1/sqrt(2) is that
+                        // limit, rounded down so float error cannot push
+                        // it over.
+                        //
+                        // Going larger needs either per-frame sizing
+                        // (scale each of the 60 frames by
+                        // 1/(|cos|+|sin|) -- full size at the cardinals,
+                        // 0.707 on the diagonals, but visibly breathing)
+                        // or a taller cell. The 2x5 sits at 0.802 because
+                        // its blur shrink happens to land there, which is
+                        // why it still clips ~13% on the diagonals.
                         val frames = WidgetShapes.renderSilhouetteFrames(
                             cell.shape, framePx, cell.color, frameCount,
-                            contentScale = 1.0f,
+                            contentScale = 0.7071f,
                         )
                         removeAllViews(R.id.widget_spin)
                         for (bmp in frames) {

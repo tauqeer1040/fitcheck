@@ -24,26 +24,35 @@ class PresetStickersService {
 
   /// Bumped when the shipped set changes: a new key seeds the new set
   /// once, without resurrecting anything deleted from the old one.
-  static const String _seededKey = 'preset_stickers_seeded_v1';
+  static const String _seededKey = 'preset_stickers_seeded_v2';
 
   /// A deliberate pick out of the shipped onboarding sheet — the first
   /// ten, then the last five.
+  ///
+  /// v2 re-cut the grid set at up to 1200px on the long edge (the old
+  /// files topped out at 227x256 and went visibly soft once the grid
+  /// zoomed to 3-4 columns). Capped rather than shipped at native 1382px:
+  /// still ~2x what a zoomed cell needs, for +880KB instead of +13MB.
+  ///
+  /// The old fitcheck_*.webp files stay in assets/onboarding/ — they
+  /// are the onboarding border particles ([StickerArt._assets]), which
+  /// render a few dozen px across and never show their resolution.
   static const List<String> assets = [
-    'assets/onboarding/fitcheck_1790191962563.webp',
-    'assets/onboarding/fitcheck_1790191969091.webp',
-    'assets/onboarding/fitcheck_1790191976439.webp',
-    'assets/onboarding/fitcheck_1790191987013.webp',
-    'assets/onboarding/fitcheck_1790191994862.webp',
-    'assets/onboarding/fitcheck_1790192004017.webp',
-    'assets/onboarding/fitcheck_1790192013053.webp',
-    'assets/onboarding/fitcheck_1790192020518.webp',
-    'assets/onboarding/fitcheck_1790192028291.webp',
-    'assets/onboarding/fitcheck_1790192037501.webp',
-    'assets/onboarding/fitcheck_1790192917726.webp',
-    'assets/onboarding/fitcheck_1790192927514.webp',
-    'assets/onboarding/fitcheck_1790192941729.webp',
-    'assets/onboarding/fitcheck_1790192955405.webp',
-    'assets/onboarding/fitcheck_1790193084453.webp',
+    'assets/onboarding/preset_hd_01.webp',
+    'assets/onboarding/preset_hd_02.webp',
+    'assets/onboarding/preset_hd_03.webp',
+    'assets/onboarding/preset_hd_04.webp',
+    'assets/onboarding/preset_hd_05.webp',
+    'assets/onboarding/preset_hd_06.webp',
+    'assets/onboarding/preset_hd_07.webp',
+    'assets/onboarding/preset_hd_08.webp',
+    'assets/onboarding/preset_hd_09.webp',
+    'assets/onboarding/preset_hd_10.webp',
+    'assets/onboarding/preset_hd_11.webp',
+    'assets/onboarding/preset_hd_12.webp',
+    'assets/onboarding/preset_hd_13.webp',
+    'assets/onboarding/preset_hd_14.webp',
+    'assets/onboarding/preset_hd_15.webp',
   ];
 
   /// Copies that set into the sticker store. Safe to call on every

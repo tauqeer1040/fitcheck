@@ -32,6 +32,13 @@ import '../widgets/sticker_frame.dart';
 import 'gallery_screen.dart';
 import 'photo_preview_screen.dart';
 
+/// Display face behind the two onboarding reveal words — "AURAAA" on the
+/// Aura reveal and "SAUCEEE" on the widget page. Declared in pubspec as
+/// Regular + Italic only, so never put a [FontWeight] on a span using
+/// it: there is no bold to match and Flutter would synthesise one,
+/// which visibly bloats the strokes on a face this heavy.
+const String kRevealDisplayFont = 'Better Faster';
+
 /// StickerPants first-run flow, ramadan onboarding layout (structure
 /// only): top step bar, hero visual, title, body/cards, Back + Continue,
 /// paywall finale. Steps:
@@ -474,6 +481,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     // instead of restarting on Amen. A debug fast-forward keeps its own
     // page ([keepStep]).
     unawaited(_restoreProgress(keepStep: startIndex != null));
+    unawaited(_resolveNotifications());
   }
 
   /// Debug fast-forward onto the Aura reveal: the cutout only ever lives
@@ -660,6 +668,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'notifications',
   ];
 
+  /// The one page that is conditional. Named so [_stepIndex] can find
+  /// it without re-deriving the index from the list literal.
+  static const String kNotificationsPage = 'notifications';
+
   /// The cutout only ever exists in memory (the picked photo is a temp
   /// file, the cutout is made by the preview screen on this run), so a
   /// cold start can never resume onto the Aura page — it resumes on the
@@ -738,8 +750,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       debugPrint('[pick] _next BLOCKED by navGuard');
       return;
     }
-    if (_index < _pages.length - 1) {
-      _goTo(_index + 1);
+    final next = _stepIndex(_index, 1);
+    if (next < _pages.length) {
+      _goTo(next);
     } else {
       _finish();
     }
@@ -748,10 +761,50 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   void _back() {
     debugPrint('[nav] _back index=$_index');
     if (!_navGuard()) return;
-    if (_index > 0) {
-      _goTo(_index - 1);
+    final prev = _stepIndex(_index, -1);
+    if (prev >= 0) {
+      _goTo(prev);
     } else if (widget.debugPreview && mounted) {
       Navigator.of(context).pop();
+    }
+  }
+
+  /// True when the notifications page is dead weight: the user already
+  /// settled the permission (granted on the system prompt, or denied
+  /// permanently), so the page would ask for something they have
+  /// already answered. Resolved once at boot — see [_resolveNotifications].
+  bool _skipNotifications = false;
+
+  /// The next index to actually show, stepping over [kNotificationsPage]
+  /// when it is being skipped. Keeps every other page's index untouched:
+  /// [_pages] stays a compile-time constant, so resume, analytics and
+  /// the debug jump all keep addressing the same slots.
+  int _stepIndex(int from, int delta) {
+    var i = from + delta;
+    while (i >= 0 &&
+        i < _pages.length &&
+        _skipNotifications &&
+        _pages[i] == kNotificationsPage) {
+      i += delta;
+    }
+    return i;
+  }
+
+  /// Ask the platform once, early. Nothing here blocks the first frame:
+  /// the page sits at the very end of the flow, so a late answer still
+  /// lands before the user can reach it.
+  Future<void> _resolveNotifications() async {
+    try {
+      if (widget.debugPreview) return;
+      _skipNotifications = await NotificationService.areEnabled();
+      if (_skipNotifications && mounted) {
+        // A resume can drop the user straight onto a now-dead page.
+        final idx = _stepIndex(_index, 0);
+        if (idx != _index) _goTo(idx);
+        setState(() {});
+      }
+    } catch (_) {
+      // Plugin unavailable: keep the page, it degrades on its own.
     }
   }
 
@@ -795,7 +848,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 300),
-        pageBuilder: (_, _, _) => const GalleryScreen(),
+        pageBuilder: (_, _, _) =>
+            const GalleryScreen(startJiggling: true),
         transitionsBuilder: (_, animation, _, child) => FadeTransition(
           opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
           child: child,
@@ -954,6 +1008,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                                 _ReviewPage(
                                   onNext: _next,
                                   onBack: _back,
+                                  debugPreview: widget.debugPreview,
                                   nameAndTitle: _nameAndTitle(),
                                   copySide: _effSide,
                                   copyTop: _effTop,
@@ -1198,16 +1253,38 @@ class _AuraPageState extends State<_AuraPage>
                         ),
                       ),
                     ),
-                  Text(
-                    'I now bless thee with AURA.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: stickerTone,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      height: 1.2,
+                  Column(
+                  children: [
+                    Text(
+                      'I now bless thee with',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: stickerTone,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        height: 1.2,
+                      ),
                     ),
-                  ),
+                    // The display face is tall and condensed, and its
+                    // own line box is tighter than its cap height, so
+                    // it needs real separation — a \n inside one
+                    // RichText lets the two runs overlap here.
+                    const SizedBox(height: 14),
+                    Text(
+                      'AURA',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: kRevealDisplayFont,
+                        fontSize: 72,
+                        color: stickerTone,
+                        // All-caps, no descenders: pull the leading in
+                        // so it reads as a display lockup, not a
+                        // paragraph.
+                        height: 1.0,
+                      ),
+                    ),
+                  ],
+                ),
                   const SizedBox(height: 22),
                   AnimatedBuilder(
                     animation: _reveal,
@@ -1647,7 +1724,8 @@ class _CtaRow extends StatelessWidget {
 /// The Google review ask, one page after Sauce: the user already rated
 /// themselves 5/5 on the rate screen, so echoing that back is just
 /// asking them to say it louder. "Not now" walks on; the notifications
-/// page after this one only shows when permission isn't already granted.
+/// page after this one only shows when permission isn't already granted
+/// — see [_skipNotifications] in the flow, which steps over it.
 class _ReviewPage extends StatefulWidget {
   final VoidCallback onNext;
   final VoidCallback onBack;
@@ -1661,6 +1739,11 @@ class _ReviewPage extends StatefulWidget {
   final double copySide;
   final double copyTop;
   final double ctaBottom;
+
+  /// Debug replay: suppresses the automatic Play dialog so stepping
+  /// through the preview can't fire a real review ask.
+  final bool debugPreview;
+
   const _ReviewPage({
     required this.onNext,
     required this.onBack,
@@ -1669,6 +1752,7 @@ class _ReviewPage extends StatefulWidget {
     this.copySide = 75,
     this.copyTop = 75,
     this.ctaBottom = 75,
+    this.debugPreview = false,
   });
 
   @override
@@ -1678,15 +1762,49 @@ class _ReviewPage extends StatefulWidget {
 class _ReviewPageState extends State<_ReviewPage> {
   bool _busy = false;
 
-  /// Opens the Play in-app review dialog (no-op on side-loaded builds),
-  /// then walks on either way — the ask itself is the moment.
+  /// The dialog is requested the moment the page appears — no tap. By
+  /// this point the flow has already run for minutes (six questions, a
+  /// photo cutout, the widget page), which is well past Play's
+  /// "engaged user" bar, so waiting for a button only loses the ask.
+  bool _autoRequested = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoAsk());
+  }
+
+  void _autoAsk() {
+    if (!mounted || _autoRequested || widget.debugPreview) return;
+    _autoRequested = true;
+    unawaited(_ask());
+  }
+
+  /// Play's requestReview() returns void and declines silently — already
+  /// reviewed, quota spent, side-loaded build — so a returned future
+  /// proves nothing. Time-box it anyway: the three exits on this page
+  /// disable while [_busy], and a hung native call would otherwise
+  /// strand the user with Rate us, Back and Not now all dead.
+  Future<void> _ask() async {
+    try {
+      await GrowthService.requestReview().timeout(
+        const Duration(seconds: 3),
+      );
+    } catch (_) {}
+  }
+
+  /// Manual retry for when Play declined the automatic ask (and on
+  /// side-loaded builds, where nothing appears at all). Always walks on
+  /// — the ask is the moment, not the outcome.
   Future<void> _rate() async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      await GrowthService.requestReview();
-    } catch (_) {}
-    widget.onNext();
+      await _ask();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (mounted) widget.onNext();
   }
 
   @override
@@ -2094,7 +2212,15 @@ class _AboutYouStepPageState extends State<_AboutYouStepPage>
             ),
           ),
           _CtaRow(
-            onNext: answered ? widget.onNext : null,
+            // Continue is the other way out of the name field, so it
+            // dismisses the keyboard too — otherwise it survives the
+            // page change and covers the next question.
+            onNext: answered
+                ? () {
+                    FocusScope.of(context).unfocus();
+                    widget.onNext();
+                  }
+                : null,
             onBack: widget.onBack,
           ),
           SizedBox(height: widget.ctaBottom),
@@ -2381,6 +2507,10 @@ class _NameRow extends StatelessWidget {
             },
             onSubmitted: (v) {
               AppHaptics.tap();
+              // Done means "I'm finished" — drop the keyboard so it
+              // stops sitting over the CTA row. Nothing else on this
+              // page takes text, so there is no reason to keep it up.
+              FocusScope.of(context).unfocus();
               onAnswered(v);
             },
             style: const TextStyle(color: Colors.white, fontSize: 18),
@@ -2819,27 +2949,35 @@ class _SaucePage extends StatelessWidget {
                 ),
               ),
             ),
-          RichText(
-            textAlign: TextAlign.center,
-            text: const TextSpan(
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                height: 1.2,
+          Column(
+            children: [
+              Text(
+                'For your last wish,\nI now bless thee '
+                'Homescreen\nwith',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  height: 1.2,
+                ),
               ),
-              children: [
-                TextSpan(
-                  text:
-                      'For your last wish,\nI now bless thee '
-                      'Homescreen\nwith ',
+              // Same tall-condensed collision as AURAAA — needs real
+              // separation, not a newline inside one RichText.
+              const SizedBox(height: 14),
+              const Text(
+                'SAUCE',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: kRevealDisplayFont,
+                  fontSize: 72,
+                  // The face ships an italic; it keeps the emphasis
+                  // this word had before the restyle.
+                  fontStyle: FontStyle.italic,
+                  height: 1.0,
                 ),
-                TextSpan(
-                  text: 'Sauce',
-                  style: TextStyle(fontStyle: FontStyle.italic),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Align(

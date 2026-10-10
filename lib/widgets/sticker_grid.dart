@@ -511,8 +511,9 @@ class _StickerCell extends StatelessWidget {  final OutfitSticker sticker;
         child: shapeBg
             ? ShapedSticker(
                 imagePath: sticker.imagePath,
-                shapeIndex:
-                    sticker.shapeIndex ?? fallbackShapeIndex(sticker.id),
+                shapeIndex: shapeIndexForTier(
+                  sticker.shapeIndex ?? fallbackShapeIndex(sticker.id),
+                ),
                 dominantColor:
                     sticker.dominantColor ?? kFallbackStickerColor,
                 shapeScale: shapeScale,

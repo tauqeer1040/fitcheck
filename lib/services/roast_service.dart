@@ -85,14 +85,26 @@ class RoastService {
   }) =>
       roastForId(sticker.id, salt: salt, isMax: isMax);
 
+  /// How many lines this tier can serve: [_roasts], plus [_maxRoasts]
+  /// for members. The widget rotates through every one of them.
+  static int poolSize({bool isMax = false}) =>
+      _roasts.length + (isMax ? _maxRoasts.length : 0);
+
+  /// The [index]th line of the tier's pool, free lines first. Index 0
+  /// is stable whether or not Max exists, so [roastForId] keeps handing
+  /// a free sticker the byte-identical line across an upgrade.
+  static String lineAt(int index, {bool isMax = false}) {
+    final free = _roasts.length;
+    final total = free + (isMax ? _maxRoasts.length : 0);
+    final i = index % total;
+    return i < free ? _roasts[i] : _maxRoasts[i - free];
+  }
+
   /// Same pick by raw id — for cutouts that aren't saved stickers yet
   /// (e.g. the onboarding Aura reveal).
   static String roastForId(String id, {int salt = 0, bool isMax = false}) {
     final h = id.hashCode ^ salt;
-    final free = _roasts.length;
-    final total = free + (isMax ? _maxRoasts.length : 0);
-    final pick = h.abs() % total;
-    return pick < free ? _roasts[pick] : _maxRoasts[pick - free];
+    return lineAt(h.abs(), isMax: isMax);
   }
 
   /// Number of lines in the rotation (for tests/debug).

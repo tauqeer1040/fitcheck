@@ -55,3 +55,7 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 sites/*/.astro
+
+# Debug symbols archived per release (upload to Play Console, then back up).
+# NOT committed - keep local/cloud only.
+.symbols/
